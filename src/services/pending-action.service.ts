@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 import {
   PendingAction,
   IPendingAction,
@@ -13,6 +14,7 @@ import { JobService, jobPayloadSchema } from './job.service';
 import { CandidateStatusService } from './candidate-status.service';
 import { publishConversationEvent } from './event-bus.service';
 import { sourcingQueue, outreachSendQueue } from '../queues';
+import { EmailTransportService } from './email-transport.service';
 import { env } from '../config/env';
 
 export class ActionError extends Error {
@@ -445,6 +447,75 @@ export class PendingActionService {
         }
 
         result = { campaignId, status: 'ACTIVE', reEnqueuedCount };
+        break;
+      }
+      case 'SEND_BOOKING_LINK': {
+        const candidateId = effectivePayload.candidateId as string;
+        const candidate = await Candidate.findById(candidateId);
+        if (!candidate) throw new ActionError('CANDIDATE_NOT_FOUND', `Candidate ${candidateId} not found`, 404);
+
+        if (!candidate.bookingToken) {
+          candidate.bookingToken = crypto.randomBytes(16).toString('hex');
+          await candidate.save();
+        }
+
+        const transitionRes = await CandidateStatusService.transition(
+          candidate._id,
+          'Meeting booked',
+          'agent',
+          'Recruiter approved and sent meeting booking link'
+        );
+
+        const bookingUrl = `${env.PUBLIC_FRONTEND_URL}/mock-booking/${candidate.bookingToken}`;
+
+        result = {
+          candidateId,
+          candidateName: candidate.fullName,
+          bookingToken: candidate.bookingToken,
+          bookingUrl,
+          status: 'Meeting booked',
+          previousStatus: transitionRes.previousStatus,
+        };
+        break;
+      }
+      case 'UPDATE_STATUS': {
+        const candidateId = effectivePayload.candidateId as string;
+        const newStatus = effectivePayload.newStatus as CandidateStatus;
+        const reason = (effectivePayload.reason as string) || 'Recruiter status update via chat';
+
+        const transitionRes = await CandidateStatusService.transition(
+          candidateId,
+          newStatus,
+          'recruiter',
+          reason
+        );
+
+        result = {
+          candidateId,
+          newStatus: transitionRes.newStatus,
+          previousStatus: transitionRes.previousStatus,
+        };
+        break;
+      }
+      case 'SEND_REPLY': {
+        const candidateId = effectivePayload.candidateId as string;
+        const replyBody = (effectivePayload.replyBody as string) || (effectivePayload.draftedBody as string) || '';
+        const candidate = await Candidate.findById(candidateId);
+        if (!candidate) throw new ActionError('CANDIDATE_NOT_FOUND', `Candidate ${candidateId} not found`, 404);
+
+        const transport = EmailTransportService.getTransport();
+        const sendRes = await transport.sendMail({
+          from: env.EMAIL_FROM,
+          to: candidate.email || 'candidate@example.com',
+          subject: (effectivePayload.subject as string) || 'Re: Your Application / Outreach at Aironauts',
+          text: replyBody,
+        });
+
+        result = {
+          candidateId,
+          sent: true,
+          previewUrl: (sendRes as any).previewUrl || null,
+        };
         break;
       }
       default:

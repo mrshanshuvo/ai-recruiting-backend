@@ -1,6 +1,12 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 
-export type ReplyClass = 'Interested' | 'Not interested' | 'Question' | 'Wants a meeting' | 'Unsubscribe';
+export type ReplyClass =
+  | 'Interested'
+  | 'Not interested'
+  | 'Question'
+  | 'Wants a meeting'
+  | 'Unsubscribe'
+  | 'Out of office';
 
 export interface IReply extends Document {
   _id: Types.ObjectId;
@@ -24,7 +30,7 @@ const ReplySchema = new Schema<IReply>(
     body: { type: String, required: true },
     replyClass: {
       type: String,
-      enum: ['Interested', 'Not interested', 'Question', 'Wants a meeting', 'Unsubscribe'],
+      enum: ['Interested', 'Not interested', 'Question', 'Wants a meeting', 'Unsubscribe', 'Out of office'],
       required: true,
     },
     classificationReason: { type: String, required: false },

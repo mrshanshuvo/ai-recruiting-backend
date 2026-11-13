@@ -8,6 +8,8 @@ import { chatRouter } from './routes/chat.route';
 import { actionRouter } from './routes/action.route';
 import { jobRouter } from './routes/job.route';
 import { candidateRouter } from './routes/candidate.route';
+import { replyRouter } from './routes/reply.route';
+import { bookingRouter } from './routes/booking.route';
 
 const app = express();
 
@@ -20,11 +22,16 @@ app.use(express.json());
 // Health check endpoint (GET /health)
 app.use(healthRouter);
 
+// Root routes (e.g. POST /simulate-reply per DEC-15)
+app.use(replyRouter);
+
 // API routes (/api)
 app.use('/api', chatRouter);
 app.use('/api', actionRouter);
 app.use('/api', jobRouter);
 app.use('/api', candidateRouter);
+app.use('/api', replyRouter);
+app.use('/api', bookingRouter);
 
 // Fallback error handler
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

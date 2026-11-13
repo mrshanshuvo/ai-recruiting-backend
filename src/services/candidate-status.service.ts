@@ -14,7 +14,7 @@ export class InvalidStateTransitionError extends Error {
 export const ALLOWED_TRANSITIONS: Record<CandidateStatus, CandidateStatus[]> = {
   Sourced: ['Accepted', 'Rejected'],
   Accepted: ['Contacted', 'Rejected'],
-  Contacted: ['Replied', 'Unsubscribed'],
+  Contacted: ['Replied', 'Interested', 'Not interested', 'Meeting booked', 'Unsubscribed'],
   Replied: ['Interested', 'Not interested', 'Meeting booked', 'Replied', 'Unsubscribed'],
   Interested: ['Meeting booked', 'Rejected', 'Unsubscribed'],
   'Not interested': ['Rejected', 'Unsubscribed'],

@@ -46,6 +46,14 @@ import {
   resumeCampaignInputSchema,
   executeResumeCampaign,
 } from './tools/campaign-lifecycle.tool';
+import {
+  proposeBookingLinkInputSchema,
+  executeProposeBookingLink,
+} from './tools/booking-link.tool';
+import {
+  updateCandidateStatusInputSchema,
+  executeUpdateCandidateStatus,
+} from './tools/update-candidate-status.tool';
 
 export async function executeWithRetry<T>(
   fn: (modelName: string) => Promise<T>,
@@ -405,6 +413,56 @@ export class AgentService {
           return res;
         },
       }),
+
+      propose_booking_link: tool({
+        description:
+          'Proposes sending an introductory meeting booking link to an interested candidate. Returns an interactive booking_link card.',
+        inputSchema: proposeBookingLinkInputSchema,
+        execute: async (input: z.infer<typeof proposeBookingLinkInputSchema>) => {
+          const res = await executeProposeBookingLink(input, conversationId);
+          toolMessage = res.message || res.error || 'I prepared the booking link proposal, please confirm.';
+          if (res.card) {
+            parts.push({
+              type: 'card',
+              card: res.card as any,
+            });
+            await publishConversationEvent(conversationId, 'CHAT_PART', {
+              messageId: assistantMsgId.toString(),
+              partIndex: parts.length - 1,
+              part: {
+                type: 'card',
+                card: res.card as any,
+              },
+            });
+          }
+          return res;
+        },
+      }),
+
+      update_candidate_status: tool({
+        description:
+          'Proposes advancing or updating a candidate status in the recruitment pipeline (e.g. Interviewed, Shortlisted, Hired, Rejected). Returns an interactive status_update card.',
+        inputSchema: updateCandidateStatusInputSchema,
+        execute: async (input: z.infer<typeof updateCandidateStatusInputSchema>) => {
+          const res = await executeUpdateCandidateStatus(input, conversationId);
+          toolMessage = res.message || res.error || 'I prepared the status update, please confirm.';
+          if (res.card) {
+            parts.push({
+              type: 'card',
+              card: res.card as any,
+            });
+            await publishConversationEvent(conversationId, 'CHAT_PART', {
+              messageId: assistantMsgId.toString(),
+              partIndex: parts.length - 1,
+              part: {
+                type: 'card',
+                card: res.card as any,
+              },
+            });
+          }
+          return res;
+        },
+      }),
     };
 
     try {
@@ -424,6 +482,8 @@ export class AgentService {
               hasToolCall('propose_campaign'),
               hasToolCall('pause_campaign'),
               hasToolCall('resume_campaign'),
+              hasToolCall('propose_booking_link'),
+              hasToolCall('update_candidate_status'),
               hasToolCall('confirm_action'),
               hasToolCall('cancel_action'),
               isStepCount(3),
