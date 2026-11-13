@@ -12,8 +12,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ai-sdk/google": "^0.0.55",
-    "ai": "^3.3.39",
+    "@ai-sdk/google": "^4.0.120",
+    "ai": "^7.0.172",
     "bullmq": "^5.12.9",
     "cheerio": "^1.0.0",
     "cors": "^2.8.5",

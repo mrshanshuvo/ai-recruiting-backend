@@ -1,12 +1,11 @@
 import { z } from 'zod';
 import { PendingActionService } from '../../services/pending-action.service';
-import { PendingAction } from '../../models';
 
 export const confirmActionInputSchema = z.object({
   actionId: z
     .string()
     .optional()
-    .describe('The ID of the PendingAction to confirm. If omitted, the most recent pending action is confirmed.'),
+    .describe('The ID of the PendingAction to confirm. If omitted, the single active pending action in this conversation will be used.'),
 });
 
 export async function executeConfirmAction(
@@ -14,29 +13,35 @@ export async function executeConfirmAction(
   conversationId: string
 ) {
   try {
-    let actionId = input.actionId;
-    if (!actionId) {
-      const latestPending = await PendingAction.findOne({
-        conversationId,
-        status: 'PENDING',
-      }).sort({ createdAt: -1 });
+    const { resolvedId, error } = await PendingActionService.resolveActionId(
+      conversationId,
+      input.actionId,
+      'confirm'
+    );
 
-      if (!latestPending) {
-        return {
-          success: false,
-          error: 'No active pending action found to confirm.',
-        };
-      }
-      actionId = latestPending._id.toString();
+    if (error || !resolvedId) {
+      return {
+        success: false,
+        error: error || 'Could not resolve pending action to confirm.',
+      };
     }
 
-    const result = await PendingActionService.confirmAction(actionId, conversationId);
+    const result = await PendingActionService.confirmAction(resolvedId, conversationId);
+    const appliedEdits = result.result?.appliedEdits as Record<string, unknown> | undefined;
+    let message = `Confirmed and created job "${result.result?.title}" (${result.result?.jobId}).`;
+    if (appliedEdits && Object.keys(appliedEdits).length > 0) {
+      const editDetails = Object.entries(appliedEdits)
+        .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+        .join(', ');
+      message += ` Applied edited values: ${editDetails}.`;
+    }
+
     return {
       success: true,
       actionId: result.actionId,
       status: result.status,
       result: result.result,
-      message: `Action confirmed and successfully executed. Created record details: ${JSON.stringify(result.result)}`,
+      message,
     };
   } catch (error) {
     return {

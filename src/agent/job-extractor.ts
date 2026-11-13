@@ -49,9 +49,10 @@ ${text}
 
   // Track token usage per ADR-0015 & requirement 4
   if (result.usage) {
-    const promptTokens = result.usage.promptTokens || 0;
-    const completionTokens = result.usage.completionTokens || 0;
-    const totalTokens = promptTokens + completionTokens;
+    const usageAny = result.usage as any;
+    const promptTokens = usageAny.inputTokens ?? usageAny.promptTokens ?? 0;
+    const completionTokens = usageAny.outputTokens ?? usageAny.completionTokens ?? 0;
+    const totalTokens = usageAny.totalTokens ?? (promptTokens + completionTokens);
     // Estimated cost ($0.075 / 1M input, $0.30 / 1M output)
     const cost = (promptTokens * 0.075 + completionTokens * 0.3) / 1000000;
 

@@ -3,11 +3,6 @@ import { fetchSafeJdUrl } from '../../services/safe-fetch.service';
 import { extractJobFromText } from '../job-extractor';
 import { PendingActionService } from '../../services/pending-action.service';
 
-import { z } from 'zod';
-import { fetchSafeJdUrl } from '../../services/safe-fetch.service';
-import { extractJobFromText } from '../job-extractor';
-import { PendingActionService } from '../../services/pending-action.service';
-
 export const parseAndProposeJobInputSchema = z.object({
   rawTextOrUrl: z.string().optional().describe('The raw text of the Job Description or a public HTTP/HTTPS URL'),
   title: z.string().optional().describe('Job title, e.g. Senior Frontend Engineer'),

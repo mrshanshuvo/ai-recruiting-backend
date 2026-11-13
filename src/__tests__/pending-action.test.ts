@@ -223,5 +223,84 @@ describe('PendingAction Service & Confirmation Gate Tests', () => {
     expect(doc?.status).toBe('PENDING');
     expect((doc?.payload as any).title).toBe('Valid Job');
   });
+
+  it('7. Missing actionId with exactly one active pending action resolves and confirms', async () => {
+    // Clear pending actions for conv2Id
+    await PendingAction.deleteMany({ conversationId: conv2Id });
+
+    const singleAction = await PendingActionService.createAction({
+      conversationId: conv2Id,
+      actionType: 'CREATE_JOB',
+      payload: {
+        title: 'Only Active Role',
+        mustHaveSkills: ['Go', 'Kubernetes'],
+      },
+    });
+
+    const { resolvedId, error } = await PendingActionService.resolveActionId(conv2Id, undefined, 'confirm');
+    expect(error).toBeUndefined();
+    expect(resolvedId).toBe(singleAction._id.toString());
+
+    // Confirm it
+    const confirmResult = await PendingActionService.confirmAction(resolvedId!, conv2Id);
+    expect(confirmResult.status).toBe('EXECUTED');
+    expect(confirmResult.result.title).toBe('Only Active Role');
+  });
+
+  it('8. Missing actionId with multiple active pending actions returns error listing them', async () => {
+    // Create conversation with 2 pending actions
+    const multiConv = await Conversation.create({ title: 'Multi Actions Conv' });
+    const multiConvId = multiConv._id.toString();
+
+    const a1 = await PendingActionService.createAction({
+      conversationId: multiConvId,
+      actionType: 'CREATE_JOB',
+      payload: { title: 'First Role', mustHaveSkills: ['Node.js'] },
+    });
+
+    const a2 = await PendingActionService.createAction({
+      conversationId: multiConvId,
+      actionType: 'CREATE_JOB',
+      payload: { title: 'Second Role', mustHaveSkills: ['Python'] },
+    });
+
+    const { resolvedId, error } = await PendingActionService.resolveActionId(multiConvId, undefined, 'confirm');
+    expect(resolvedId).toBeUndefined();
+    expect(error).toBeDefined();
+    expect(error).toContain('Multiple pending actions exist');
+    expect(error).toContain('First Role');
+    expect(error).toContain('Second Role');
+    expect(error).toContain('Please specify which one');
+  });
+
+  it('9. Missing actionId with zero active pending actions returns clear error', async () => {
+    const emptyConv = await Conversation.create({ title: 'Empty Actions Conv' });
+    const emptyConvId = emptyConv._id.toString();
+
+    const { resolvedId, error } = await PendingActionService.resolveActionId(emptyConvId, undefined, 'confirm');
+    expect(resolvedId).toBeUndefined();
+    expect(error).toBe('No active pending action found to confirm in this conversation.');
+  });
+
+  it('10. LLM retry: first call forced to fail with 503, retry succeeds', async () => {
+    const { executeWithRetry } = await import('../agent/agent.service');
+
+    let attempts = 0;
+    const mockModelFn = async (modelName: string) => {
+      attempts++;
+      if (attempts === 1) {
+        const err: any = new Error('This model is currently experiencing high demand. Spikes in demand are usually temporary.');
+        err.statusCode = 503;
+        throw err;
+      }
+      return { success: true, model: modelName, attempts };
+    };
+
+    const res = await executeWithRetry(mockModelFn, 'test-primary-model', 'test-fallback-model');
+    expect(res.success).toBe(true);
+    expect(res.attempts).toBe(2);
+    expect(res.model).toBe('test-primary-model');
+    expect(attempts).toBe(2);
+  });
 });
 

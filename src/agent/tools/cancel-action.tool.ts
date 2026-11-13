@@ -1,12 +1,11 @@
 import { z } from 'zod';
 import { PendingActionService } from '../../services/pending-action.service';
-import { PendingAction } from '../../models';
 
 export const cancelActionInputSchema = z.object({
   actionId: z
     .string()
     .optional()
-    .describe('The ID of the PendingAction to cancel. If omitted, the most recent pending action is cancelled.'),
+    .describe('The ID of the PendingAction to cancel. If omitted, the single active pending action in this conversation will be used.'),
   reason: z.string().optional().describe('Optional reason for cancellation'),
 });
 
@@ -15,28 +14,25 @@ export async function executeCancelAction(
   conversationId: string
 ) {
   try {
-    let actionId = input.actionId;
-    if (!actionId) {
-      const latestPending = await PendingAction.findOne({
-        conversationId,
-        status: 'PENDING',
-      }).sort({ createdAt: -1 });
+    const { resolvedId, error } = await PendingActionService.resolveActionId(
+      conversationId,
+      input.actionId,
+      'cancel'
+    );
 
-      if (!latestPending) {
-        return {
-          success: false,
-          error: 'No active pending action found to cancel.',
-        };
-      }
-      actionId = latestPending._id.toString();
+    if (error || !resolvedId) {
+      return {
+        success: false,
+        error: error || 'Could not resolve pending action to cancel.',
+      };
     }
 
-    const result = await PendingActionService.cancelAction(actionId, conversationId, input.reason);
+    const result = await PendingActionService.cancelAction(resolvedId, conversationId, input.reason);
     return {
       success: true,
       actionId: result.actionId,
       status: result.status,
-      message: `Action ${actionId} was cancelled.`,
+      message: `Action ${result.actionId} was cancelled.`,
     };
   } catch (error) {
     return {

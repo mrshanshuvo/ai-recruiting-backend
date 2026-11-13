@@ -39,3 +39,82 @@ export async function executeGetJob(input: z.infer<typeof getJobInputSchema>) {
   };
 }
 
+export const getJobStatsInputSchema = z.object({
+  jobId: z.string().describe('The ID of the job to get pipeline statistics for'),
+});
+
+export async function executeGetJobStats(input: z.infer<typeof getJobStatsInputSchema>) {
+  const job = await JobService.getJobById(input.jobId);
+  if (!job) {
+    return {
+      success: false,
+      error: 'Job not found',
+    };
+  }
+  return {
+    success: true,
+    jobId: job._id.toString(),
+    title: job.title,
+    candidateCounts: job.candidateCounts,
+  };
+}
+
+export const findCandidatesInputSchema = z.object({
+  jobId: z.string().optional().describe('Filter by job ID'),
+  status: z.string().optional().describe('Filter by candidate status'),
+  name: z.string().optional().describe('Filter by candidate name substring'),
+});
+
+export async function executeFindCandidates(input: z.infer<typeof findCandidatesInputSchema>) {
+  const { Candidate } = await import('../../models');
+  const query: Record<string, unknown> = {};
+  if (input.jobId) query.jobId = input.jobId;
+  if (input.status) query.status = input.status;
+  if (input.name) query.fullName = { $regex: input.name, $options: 'i' };
+
+  const candidates = await Candidate.find(query).limit(20).lean();
+  return {
+    success: true,
+    count: candidates.length,
+    candidates: candidates.map((c) => ({
+      id: c._id.toString(),
+      fullName: c.fullName,
+      email: c.email,
+      status: c.status,
+      score: c.score,
+      currentTitle: c.currentTitle,
+      currentCompany: c.currentCompany,
+    })),
+  };
+}
+
+export const getCampaignInputSchema = z.object({
+  jobId: z.string().optional().describe('The job ID of the campaign'),
+  campaignId: z.string().optional().describe('The campaign ID'),
+});
+
+export async function executeGetCampaign(input: z.infer<typeof getCampaignInputSchema>) {
+  const { Campaign } = await import('../../models');
+  const query: Record<string, unknown> = {};
+  if (input.campaignId) query._id = input.campaignId;
+  if (input.jobId) query.jobId = input.jobId;
+
+  const campaign = await Campaign.findOne(query).lean();
+  if (!campaign) {
+    return {
+      success: false,
+      error: 'Campaign not found',
+    };
+  }
+  return {
+    success: true,
+    campaign: {
+      id: campaign._id.toString(),
+      jobId: campaign.jobId.toString(),
+      name: campaign.name,
+      status: campaign.status,
+      dailySendLimit: campaign.dailySendLimit,
+    },
+  };
+}
+

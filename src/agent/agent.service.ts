@@ -1,5 +1,6 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { streamText, tool, CoreMessage } from 'ai';
+import { streamText, tool, hasToolCall, isStepCount } from 'ai';
+import { z } from 'zod';
 import mongoose from 'mongoose';
 import { env } from '../config/env';
 import { Message, TokenUsage, IMessagePart } from '../models';
@@ -16,7 +17,64 @@ import {
   executeListJobs,
   getJobInputSchema,
   executeGetJob,
+  getJobStatsInputSchema,
+  executeGetJobStats,
+  findCandidatesInputSchema,
+  executeFindCandidates,
+  getCampaignInputSchema,
+  executeGetCampaign,
 } from './tools/job-tools';
+
+export async function executeWithRetry<T>(
+  fn: (modelName: string) => Promise<T>,
+  primaryModel: string,
+  fallbackModel?: string
+): Promise<T> {
+  const maxRetries = 3;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn(primaryModel);
+    } catch (err: any) {
+      lastError = err;
+      const status =
+        err?.status ||
+        err?.statusCode ||
+        (err?.message?.includes('503') ? 503 : undefined) ||
+        (err?.message?.includes('429') ? 429 : undefined);
+      const isRetryable =
+        status === 503 ||
+        status === 429 ||
+        err?.message?.includes('high demand') ||
+        err?.message?.includes('quota');
+
+      if (!isRetryable || attempt === maxRetries) {
+        break;
+      }
+
+      const backoffMs = Math.min(500 * Math.pow(2, attempt - 1), 3000);
+      console.warn(
+        `[AgentService] Primary model ${primaryModel} failed with ${status || 'retryable error'} on attempt ${attempt}. Retrying in ${backoffMs}ms...`
+      );
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    }
+  }
+
+  // Fallback model if primary model failed
+  if (fallbackModel && fallbackModel.trim() && fallbackModel !== primaryModel) {
+    console.warn(
+      `[AgentService] Primary model failed after ${maxRetries} attempts. Attempting fallback model: ${fallbackModel}`
+    );
+    try {
+      return await fn(fallbackModel.trim());
+    } catch (fallbackErr) {
+      lastError = fallbackErr;
+    }
+  }
+
+  throw lastError;
+}
 
 export class AgentService {
   public static async runTurn(conversationId: string, userText: string): Promise<string> {
@@ -30,15 +88,13 @@ export class AgentService {
       apiKey: env.GEMINI_API_KEY,
     });
 
-    const model = google(env.LLM_MODEL);
-
     // 1. Fetch conversation history
     const historyDocs = await Message.find({ conversationId })
       .sort({ createdAt: 1 })
       .limit(30)
       .lean();
 
-    const coreMessages: CoreMessage[] = [];
+    const coreMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
     for (const doc of historyDocs) {
       const partsText: string[] = [];
@@ -73,10 +129,10 @@ export class AgentService {
       parse_and_propose_job: tool({
         description:
           'Parses a Job Description (from raw text or a public URL) and proposes creating a job via an interactive job_confirmation card. Always use this when the user shares a JD or asks to create/propose a job.',
-        parameters: parseAndProposeJobInputSchema,
-        execute: async (input) => {
+        inputSchema: parseAndProposeJobInputSchema,
+        execute: async (input: z.infer<typeof parseAndProposeJobInputSchema>) => {
           const res = await executeParseAndProposeJob(input, conversationId);
-          toolMessage = res.message || 'I prepared this, please confirm.';
+          toolMessage = res.message || res.error || 'I prepared this, please confirm.';
           if (res.card) {
             parts.push({
               type: 'card',
@@ -98,8 +154,8 @@ export class AgentService {
       confirm_action: tool({
         description:
           'Confirms and executes an active PendingAction. Use when the user says "yes", "confirm", "proceed", "do it", or approves an active proposed card.',
-        parameters: confirmActionInputSchema,
-        execute: async (input) => {
+        inputSchema: confirmActionInputSchema,
+        execute: async (input: z.infer<typeof confirmActionInputSchema>) => {
           const res = await executeConfirmAction(input, conversationId);
           toolMessage =
             res.message || (res.success ? 'Confirmed successfully.' : res.error || 'Failed to confirm.');
@@ -110,8 +166,8 @@ export class AgentService {
       cancel_action: tool({
         description:
           'Cancels an active PendingAction. Use when the user says "no", "cancel", or rejects a proposal.',
-        parameters: cancelActionInputSchema,
-        execute: async (input) => {
+        inputSchema: cancelActionInputSchema,
+        execute: async (input: z.infer<typeof cancelActionInputSchema>) => {
           const res = await executeCancelAction(input, conversationId);
           toolMessage =
             res.message || (res.success ? 'Action cancelled.' : res.error || 'Failed to cancel.');
@@ -120,90 +176,148 @@ export class AgentService {
       }),
 
       list_jobs: tool({
-        description: 'Lists existing recruitment jobs and their status.',
-        parameters: listJobsInputSchema,
-        execute: async (input) => {
-          const res = await executeListJobs(input);
-          toolMessage = res.message || `Found ${res.jobs?.length || 0} jobs.`;
-          return res;
+        description: 'Lists existing recruitment jobs and their status from the database.',
+        inputSchema: listJobsInputSchema,
+        execute: async (input: z.infer<typeof listJobsInputSchema>) => {
+          return executeListJobs(input);
         },
       }),
 
       get_job: tool({
-        description: 'Gets full details and criteria for a specific job.',
-        parameters: getJobInputSchema,
-        execute: async (input) => {
-          const res = await executeGetJob(input);
-          toolMessage =
-            res.message || (res.job ? `Job details for ${res.job.title}` : 'Job not found.');
-          return res;
+        description: 'Gets full details and criteria for a specific job from the database.',
+        inputSchema: getJobInputSchema,
+        execute: async (input: z.infer<typeof getJobInputSchema>) => {
+          return executeGetJob(input);
+        },
+      }),
+
+      get_job_stats: tool({
+        description: 'Gets pipeline counts and statistics for a specific job.',
+        inputSchema: getJobStatsInputSchema,
+        execute: async (input: z.infer<typeof getJobStatsInputSchema>) => {
+          return executeGetJobStats(input);
+        },
+      }),
+
+      find_candidates: tool({
+        description: 'Searches candidates in the database filtered by job, status, or name.',
+        inputSchema: findCandidatesInputSchema,
+        execute: async (input: z.infer<typeof findCandidatesInputSchema>) => {
+          return executeFindCandidates(input);
+        },
+      }),
+
+      get_campaign: tool({
+        description: 'Gets recruitment campaign details and outreach sequence for a job.',
+        inputSchema: getCampaignInputSchema,
+        execute: async (input: z.infer<typeof getCampaignInputSchema>) => {
+          return executeGetCampaign(input);
         },
       }),
     };
 
-    // 2. Stream generation with tool calls (single step per turn for safety and confirmation gate)
-    const result = await streamText({
-      model,
-      system: SYSTEM_PROMPT,
-      messages: coreMessages,
-      tools: agentTools,
-      maxSteps: 1,
-    });
-
-    for await (const chunk of result.textStream) {
-      fullText += chunk;
-      await publishConversationEvent(conversationId, 'CHAT_DELTA', {
-        messageId: assistantMsgId.toString(),
-        delta: chunk,
-      });
-    }
-
-    // 3. Save assistant message and token usage
-    const finalText = fullText.trim() || toolMessage || 'I have processed your request.';
-    parts.unshift({
-      type: 'text',
-      text: finalText,
-    });
-
-    if (!fullText.trim() && finalText) {
-      await publishConversationEvent(conversationId, 'CHAT_DELTA', {
-        messageId: assistantMsgId.toString(),
-        delta: finalText,
-      });
-    }
-
-    await Message.create({
-      _id: assistantMsgId,
-      conversationId,
-      role: 'assistant',
-      parts,
-      createdAt: new Date(),
-    });
-
-    // 4. Token usage accounting
     try {
-      const usage = await result.usage;
-      if (usage) {
-        const promptTokens = usage.promptTokens || 0;
-        const completionTokens = usage.completionTokens || 0;
-        const totalTokens = promptTokens + completionTokens;
-        const cost = (promptTokens * 0.075 + completionTokens * 0.3) / 1000000;
+      await executeWithRetry(
+        async (modelName) => {
+          const model = google(modelName);
 
-        await TokenUsage.create({
-          conversationId: new mongoose.Types.ObjectId(conversationId),
-          caller: 'agent',
-          model: env.LLM_MODEL,
-          promptTokens,
-          completionTokens,
-          totalTokens,
-          estimatedCostUsd: Number(cost.toFixed(6)),
-          timestamp: new Date(),
+          const result = streamText({
+            model,
+            system: SYSTEM_PROMPT,
+            messages: coreMessages as any,
+            tools: agentTools as any,
+            stopWhen: [
+              hasToolCall('parse_and_propose_job'),
+              hasToolCall('confirm_action'),
+              hasToolCall('cancel_action'),
+              isStepCount(3),
+            ],
+          });
+
+          for await (const chunk of result.textStream) {
+            fullText += chunk;
+            await publishConversationEvent(conversationId, 'CHAT_DELTA', {
+              messageId: assistantMsgId.toString(),
+              delta: chunk,
+            });
+          }
+
+          // Token usage accounting
+          try {
+            const usage = await result.usage;
+            if (usage) {
+              const usageAny = usage as any;
+              const promptTokens = usageAny.inputTokens ?? usageAny.promptTokens ?? 0;
+              const completionTokens = usageAny.outputTokens ?? usageAny.completionTokens ?? 0;
+              const totalTokens = usageAny.totalTokens ?? promptTokens + completionTokens;
+              const cost = (promptTokens * 0.075 + completionTokens * 0.3) / 1000000;
+
+              await TokenUsage.create({
+                conversationId: new mongoose.Types.ObjectId(conversationId),
+                caller: 'agent',
+                model: modelName,
+                promptTokens,
+                completionTokens,
+                totalTokens,
+                estimatedCostUsd: Number(cost.toFixed(6)),
+                timestamp: new Date(),
+              });
+            }
+          } catch (e) {
+            console.warn('[AgentService] Could not record token usage:', e);
+          }
+        },
+        env.LLM_MODEL,
+        env.LLM_FALLBACK_MODEL
+      );
+
+      // Save assistant message
+      const finalText = fullText.trim() || toolMessage || 'I have processed your request.';
+      parts.unshift({
+        type: 'text',
+        text: finalText,
+      });
+
+      if (!fullText.trim() && finalText) {
+        await publishConversationEvent(conversationId, 'CHAT_DELTA', {
+          messageId: assistantMsgId.toString(),
+          delta: finalText,
         });
       }
-    } catch (e) {
-      console.warn('[AgentService] Could not record token usage:', e);
-    }
 
-    return assistantMsgId.toString();
+      await Message.create({
+        _id: assistantMsgId,
+        conversationId,
+        role: 'assistant',
+        parts,
+        createdAt: new Date(),
+      });
+
+      return assistantMsgId.toString();
+    } catch (error) {
+      console.error('[AgentService.runTurn Error]', error);
+      const friendlyMessage =
+        'I am currently experiencing high demand or connectivity issues with the AI service. Please try your request again in a few moments.';
+
+      parts.unshift({
+        type: 'text',
+        text: friendlyMessage,
+      });
+
+      await publishConversationEvent(conversationId, 'CHAT_DELTA', {
+        messageId: assistantMsgId.toString(),
+        delta: friendlyMessage,
+      });
+
+      await Message.create({
+        _id: assistantMsgId,
+        conversationId,
+        role: 'assistant',
+        parts,
+        createdAt: new Date(),
+      });
+
+      return assistantMsgId.toString();
+    }
   }
 }

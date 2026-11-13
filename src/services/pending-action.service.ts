@@ -70,6 +70,44 @@ export class PendingActionService {
     return action;
   }
 
+  public static async resolveActionId(
+    conversationId: string,
+    actionId?: string,
+    operation: 'confirm' | 'cancel' = 'confirm'
+  ): Promise<{ resolvedId?: string; error?: string }> {
+    if (actionId) {
+      return { resolvedId: actionId };
+    }
+
+    const now = new Date();
+    const pendingActions = await PendingAction.find({
+      conversationId: new mongoose.Types.ObjectId(conversationId),
+      status: 'PENDING',
+      expiresAt: { $gt: now },
+    }).sort({ createdAt: -1 });
+
+    if (pendingActions.length === 0) {
+      return {
+        error: `No active pending action found to ${operation} in this conversation.`,
+      };
+    }
+
+    if (pendingActions.length === 1) {
+      return { resolvedId: pendingActions[0]._id.toString() };
+    }
+
+    const list = pendingActions
+      .map(
+        (a) =>
+          `[Type: ${a.actionType}, Title: "${(a.payload as any)?.title || a.description || 'Untitled'}", Created: ${a.createdAt.toISOString()}]`
+      )
+      .join(', ');
+
+    return {
+      error: `Multiple pending actions exist (${list}). Please specify which one you want to ${operation}.`,
+    };
+  }
+
   public static async updatePayload(id: string, editedPayload: Record<string, unknown>): Promise<IPendingAction> {
     const action = await this.getAction(id);
 
@@ -177,11 +215,15 @@ export class PendingActionService {
     switch (atomicResult.actionType) {
       case 'CREATE_JOB': {
         const job = await JobService.createConfirmedJob(effectivePayload, atomicResult.conversationId);
-        result = { jobId: job._id.toString(), title: job.title };
+        result = {
+          jobId: job._id.toString(),
+          title: job.title,
+          appliedEdits: atomicResult.editedPayload ? atomicResult.editedPayload : undefined,
+        };
         break;
       }
       default:
-        result = { executed: true };
+        result = { executed: true, appliedEdits: atomicResult.editedPayload };
     }
 
     // Emit CARD_UPDATED via Redis Pub/Sub to SSE
