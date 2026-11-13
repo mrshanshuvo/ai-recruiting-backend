@@ -20,6 +20,7 @@ export interface IJob extends Document {
   salaryRange?: ISalaryRange;
   remotePolicy?: RemotePolicy;
   status: JobStatus;
+  conversationId?: Types.ObjectId;
   candidateCounts: Record<string, number>;
   createdAt: Date;
   updatedAt: Date;
@@ -48,6 +49,7 @@ const JobSchema = new Schema<IJob>(
       enum: ['OPEN', 'SOURCING', 'PAUSED', 'CLOSED'],
       default: 'OPEN',
     },
+    conversationId: { type: Schema.Types.ObjectId, ref: 'Conversation', required: false },
     candidateCounts: {
       type: Map,
       of: Number,

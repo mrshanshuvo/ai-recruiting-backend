@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { env } from '../src/config/env';
-import { Job, Candidate, Conversation, Message, OutreachMessage, Campaign, CampaignStep, ActivityLog } from '../src/models';
+import { Job, Candidate, Conversation, Message, OutreachMessage, Campaign, CampaignStep, ActivityLog, TokenUsage } from '../src/models';
 import candidateFixtures from '../src/data/candidate-fixtures.json';
 
 async function seed() {
@@ -165,6 +165,43 @@ Work Policy: Remote`,
       stepIndex: 0,
       subject: `Opportunity: Senior Frontend Engineer at Aironauts Technologies`,
     },
+    timestamp: new Date(),
+  });
+
+  // 7. Insert TokenUsage Records for this Job & Conversation
+  await TokenUsage.create({
+    jobId: job._id,
+    conversationId: conversation._id,
+    caller: 'agent',
+    model: 'gemini-3.1-flash-lite',
+    promptTokens: 4200,
+    completionTokens: 850,
+    totalTokens: 5050,
+    estimatedCostUsd: Number(((4200 * 0.075 + 850 * 0.3) / 1000000).toFixed(6)),
+    timestamp: new Date(),
+  });
+
+  await TokenUsage.create({
+    jobId: job._id,
+    conversationId: conversation._id,
+    caller: 'worker:scoring',
+    model: 'gemini-3.1-flash-lite',
+    promptTokens: 12500,
+    completionTokens: 1800,
+    totalTokens: 14300,
+    estimatedCostUsd: Number(((12500 * 0.075 + 1800 * 0.3) / 1000000).toFixed(6)),
+    timestamp: new Date(),
+  });
+
+  await TokenUsage.create({
+    jobId: job._id,
+    conversationId: conversation._id,
+    caller: 'worker:reply-classification',
+    model: 'gemini-3.1-flash-lite',
+    promptTokens: 3100,
+    completionTokens: 420,
+    totalTokens: 3520,
+    estimatedCostUsd: Number(((3100 * 0.075 + 420 * 0.3) / 1000000).toFixed(6)),
     timestamp: new Date(),
   });
 

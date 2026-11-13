@@ -25,8 +25,6 @@ import {
   executeListJobs,
   getJobInputSchema,
   executeGetJob,
-  getJobStatsInputSchema,
-  executeGetJobStats,
   findCandidatesInputSchema,
   executeFindCandidates,
   getCampaignInputSchema,
@@ -58,6 +56,10 @@ import {
   updateCandidateStatusInputSchema,
   executeUpdateCandidateStatus,
 } from './tools/update-candidate-status.tool';
+import {
+  getJobStatsInputSchema,
+  executeGetJobStats,
+} from './tools/get-job-stats.tool';
 
 export async function executeWithRetry<T>(
   fn: (modelName: string) => Promise<T>,
@@ -295,14 +297,6 @@ export class AgentService {
         },
       }),
 
-      get_job_stats: tool({
-        description: 'Gets pipeline counts and statistics for a specific job.',
-        inputSchema: getJobStatsInputSchema,
-        execute: async (input: z.infer<typeof getJobStatsInputSchema>) => {
-          return executeGetJobStats(input);
-        },
-      }),
-
       find_candidates: tool({
         description: 'Searches candidates in the database filtered by job, status, or name.',
         inputSchema: findCandidatesInputSchema,
@@ -492,6 +486,31 @@ export class AgentService {
           return res;
         },
       }),
+
+      get_job_stats: tool({
+        description:
+          'Retrieves live pipeline statistics, funnel metrics, reply/interested conversion rates, and token/cost summary for a job. Returns an interactive stats_summary card. Use when the recruiter asks about recruiting progress, status, metrics, or "how is the job going?".',
+        inputSchema: getJobStatsInputSchema,
+        execute: async (input: z.infer<typeof getJobStatsInputSchema>) => {
+          const res = await executeGetJobStats(input, conversationId);
+          toolMessage = res.message || res.error || 'Here are the live job stats:';
+          if (res.card) {
+            parts.push({
+              type: 'card',
+              card: res.card as any,
+            });
+            await publishConversationEvent(conversationId, 'CHAT_PART', {
+              messageId: assistantMsgId.toString(),
+              partIndex: parts.length - 1,
+              part: {
+                type: 'card',
+                card: res.card as any,
+              },
+            });
+          }
+          return res;
+        },
+      }),
     };
 
     try {
@@ -514,6 +533,7 @@ export class AgentService {
               hasToolCall('send_booking_link'),
               hasToolCall('propose_reply_draft'),
               hasToolCall('update_candidate_status'),
+              hasToolCall('get_job_stats'),
               hasToolCall('confirm_action'),
               hasToolCall('cancel_action'),
               isStepCount(3),

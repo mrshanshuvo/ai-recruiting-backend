@@ -3,7 +3,9 @@ import multer from 'multer';
 import mongoose from 'mongoose';
 import { JobService } from '../services/job.service';
 import { CandidateService } from '../services/candidate.service';
+import { JobStatsService } from '../services/job-stats.service';
 import { ActivityLog } from '../models/activity-log.model';
+import { Candidate } from '../models/candidate.model';
 
 const upload = multer({
   limits: { fileSize: 1024 * 1024 }, // 1MB max limit per DEC-09
@@ -14,12 +16,92 @@ export const jobRouter = Router();
 jobRouter.get('/jobs', async (req: Request, res: Response) => {
   try {
     const { status } = req.query;
-    const jobs = await JobService.listJobs(status as string | undefined);
-    res.status(200).json({ success: true, jobs });
+    const rawJobs = await JobService.listJobs(status as string | undefined);
+
+    // Attach aggregated KPI counts per job: candidates, contacted, meetings, hires
+    const jobsWithMetrics = await Promise.all(
+      rawJobs.map(async (j) => {
+        const jobObj = j.toObject ? j.toObject() : j;
+        const jobId = j._id;
+
+        const [totalCandidates, contacted, meetings, hires] = await Promise.all([
+          Candidate.countDocuments({ jobId }),
+          Candidate.countDocuments({
+            jobId,
+            $or: [
+              { contactedAt: { $exists: true, $ne: null } },
+              {
+                status: {
+                  $in: [
+                    'Contacted',
+                    'Replied',
+                    'Interested',
+                    'Not interested',
+                    'Unsubscribed',
+                    'Meeting booked',
+                    'Interviewed',
+                    'Shortlisted',
+                    'Hired',
+                  ],
+                },
+              },
+            ],
+          }),
+          Candidate.countDocuments({
+            jobId,
+            $or: [
+              { status: { $in: ['Meeting booked', 'Interviewed', 'Shortlisted', 'Hired'] } },
+              { meetingSlot: { $exists: true, $ne: null } },
+            ],
+          }),
+          Candidate.countDocuments({ jobId, status: 'Hired' }),
+        ]);
+
+        return {
+          ...jobObj,
+          metrics: {
+            candidates: totalCandidates,
+            contacted,
+            meetings,
+            hires,
+          },
+        };
+      })
+    );
+
+    res.status(200).json({ success: true, jobs: jobsWithMetrics });
   } catch (error) {
     res.status(500).json({
       success: false,
       error: { code: 'INTERNAL_SERVER_ERROR', message: 'Failed to list jobs' },
+    });
+  }
+});
+
+jobRouter.get('/jobs/:id/stats', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Invalid jobId format' },
+      });
+      return;
+    }
+
+    const stats = await JobStatsService.getJobStats(id);
+    res.status(200).json({ success: true, stats });
+  } catch (error: any) {
+    if (error.message?.includes('not found')) {
+      res.status(404).json({
+        success: false,
+        error: { code: 'ENTITY_NOT_FOUND', message: error.message },
+      });
+      return;
+    }
+    res.status(500).json({
+      success: false,
+      error: { code: 'INTERNAL_SERVER_ERROR', message: error.message || 'Failed to fetch job stats' },
     });
   }
 });
