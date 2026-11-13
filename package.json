@@ -1,0 +1,40 @@
+{
+  "name": "ai-recruiting-backend",
+  "version": "1.0.0",
+  "description": "Backend API and BullMQ worker for AI Recruiting Co-Worker",
+  "main": "dist/index.api.js",
+  "scripts": {
+    "build": "tsc",
+    "start:api": "node dist/index.api.js",
+    "start:worker": "node dist/index.worker.js",
+    "dev:api": "tsx watch src/index.api.ts",
+    "dev:worker": "tsx watch src/index.worker.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ai-sdk/google": "^0.0.55",
+    "ai": "^3.3.39",
+    "bullmq": "^5.12.9",
+    "cheerio": "^1.0.0",
+    "cors": "^2.8.5",
+    "csv-parse": "^5.5.6",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "ioredis": "^5.4.1",
+    "mongoose": "^8.5.3",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^6.9.14",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.14.14",
+    "@types/nodemailer": "^6.4.15",
+    "tsx": "^4.17.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}
+

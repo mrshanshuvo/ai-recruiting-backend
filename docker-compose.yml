@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  mongo:
+    image: mongo:7.0
+    container_name: recruiting_mongo
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--eval', "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: recruiting_redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: recruiting_api
+    restart: unless-stopped
+    command: node dist/index.api.js
+    ports:
+      - '4000:4000'
+    environment:
+      - PORT=4000
+      - NODE_ENV=production
+      - CORS_ORIGIN=http://localhost:5173
+      - PUBLIC_FRONTEND_URL=http://localhost:5173
+      - MONGO_URI=mongodb://mongo:27017/ai-recruiting-co-worker
+      - REDIS_URI=redis://redis:6379
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-gemini-1.5-flash}
+      - WORKER_LLM_MAX_CONCURRENCY=${WORKER_LLM_MAX_CONCURRENCY:-3}
+      - SERPER_API_KEY=${SERPER_API_KEY:-}
+      - DAILY_SEND_LIMIT=${DAILY_SEND_LIMIT:-50}
+      - OUTREACH_STEP_DELAY_UNIT=${OUTREACH_STEP_DELAY_UNIT:-seconds}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: recruiting_worker
+    restart: unless-stopped
+    command: node dist/index.worker.js
+    environment:
+      - NODE_ENV=production
+      - CORS_ORIGIN=http://localhost:5173
+      - PUBLIC_FRONTEND_URL=http://localhost:5173
+      - MONGO_URI=mongodb://mongo:27017/ai-recruiting-co-worker
+      - REDIS_URI=redis://redis:6379
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-gemini-1.5-flash}
+      - WORKER_LLM_MAX_CONCURRENCY=${WORKER_LLM_MAX_CONCURRENCY:-3}
+      - SERPER_API_KEY=${SERPER_API_KEY:-}
+      - DAILY_SEND_LIMIT=${DAILY_SEND_LIMIT:-50}
+      - OUTREACH_STEP_DELAY_UNIT=${OUTREACH_STEP_DELAY_UNIT:-seconds}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  mongo_data:
+
