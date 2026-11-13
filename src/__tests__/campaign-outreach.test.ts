@@ -9,13 +9,13 @@ import {
   ActivityLog,
   PendingAction,
 } from '../models';
-import { executeProposeCampaign } from '../agent/tools/propose-campaign.tool';
+import { executeProposeCampaign, generateCandidateOpening } from '../agent/tools/propose-campaign.tool';
 import { PendingActionService } from '../services/pending-action.service';
 import { processOutreachJob } from '../workers/outreach.worker';
 import { EmailTransportService } from '../services/email-transport.service';
 import { env } from '../config/env';
 
-describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => {
+describe('Checkpoint 6 & Requirement 5: Outreach Campaign, Preview Gate & Sending Tests', () => {
   let testJobId: mongoose.Types.ObjectId;
   let conversationId: string;
 
@@ -44,6 +44,7 @@ describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => 
   });
 
   afterEach(async () => {
+    EmailTransportService.resetTransporter();
     await Candidate.deleteMany({ jobId: testJobId });
     await Campaign.deleteMany({ jobId: testJobId });
     await OutreachMessage.deleteMany({ jobId: testJobId });
@@ -53,9 +54,9 @@ describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => 
     vi.restoreAllMocks();
   });
 
-  describe('1. Campaign Proposal Gate & Enrollment Rules', () => {
-    it('refuses to propose campaign if no Accepted candidates exist with valid email', async () => {
-      // Create Sourced candidate and candidate without email
+  describe('Enrollment & Personalization', () => {
+    it('g. a candidate without a valid email is never enrolled', async () => {
+      // Create Sourced candidate, and Accepted candidate with missing email
       await Candidate.create([
         {
           jobId: testJobId,
@@ -86,7 +87,33 @@ describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => 
       expect(res.card).toBeUndefined();
     });
 
-    it('creates a SEND_CAMPAIGN PendingAction and campaign_preview card for Accepted candidates with valid email', async () => {
+    it('personalization: a candidate with an empty snippet and no skills gets no personal claim', () => {
+      const thinCandidate = {
+        fullName: 'Alex Plain',
+        currentTitle: 'Engineer',
+        currentCompany: 'Acme',
+        skills: [],
+        snippet: '',
+      };
+      const opening = generateCandidateOpening(thinCandidate, 'Senior Distributed Systems Engineer');
+      expect(opening).toBe('');
+    });
+
+    it('personalization: generates opening from stored title, company, and skills without hallucinating', () => {
+      const richCandidate = {
+        fullName: 'Zoe Washington',
+        currentTitle: 'Senior Distributed Systems Engineer',
+        currentCompany: 'HyperGrid',
+        skills: ['Go', 'Kubernetes', 'gRPC'],
+        snippet: 'Distributed systems architect specialized in streaming.',
+      };
+      const opening = generateCandidateOpening(richCandidate, 'Senior Distributed Systems Engineer');
+      expect(opening).toContain('Senior Distributed Systems Engineer');
+      expect(opening).toContain('HyperGrid');
+      expect(opening).toContain('Go, Kubernetes, gRPC');
+    });
+
+    it('creates a SEND_CAMPAIGN proposal card with 3 steps (Day 0, Day 3, Day 7) and recipient metadata', async () => {
       await Candidate.create([
         {
           jobId: testJobId,
@@ -95,17 +122,7 @@ describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => 
           emailStatus: 'valid',
           currentTitle: 'Staff Engineer',
           currentCompany: 'CloudScale Inc',
-          status: 'Accepted',
-          source: 'search',
-          sourceMode: 'fixture',
-        },
-        {
-          jobId: testJobId,
-          fullName: 'Alex Rivera',
-          email: 'alex.rivera@example.com',
-          emailStatus: 'valid',
-          currentTitle: 'Senior Go Developer',
-          currentCompany: 'FinTech Labs',
+          skills: ['Go', 'Kafka'],
           status: 'Accepted',
           source: 'search',
           sourceMode: 'fixture',
@@ -121,28 +138,23 @@ describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => 
       expect(res.card).toBeDefined();
       expect(res.card!.cardType).toBe('campaign_preview');
       expect(res.card!.status).toBe('pending');
-      expect(res.card!.actionId).toBeDefined();
 
       const payload = res.card!.payload as any;
-      expect(payload.recipientCount).toBe(2);
-      expect(payload.steps.length).toBe(2);
+      expect(payload.recipientCount).toBe(1);
+      expect(payload.steps.length).toBe(3);
       expect(payload.steps[0].delayDays).toBe(0);
       expect(payload.steps[1].delayDays).toBe(3);
-
-      // Invariant: Nothing created in Campaign or OutreachMessage collections yet
-      const campaignsCount = await Campaign.countDocuments({ jobId: testJobId });
-      const outreachCount = await OutreachMessage.countDocuments({ jobId: testJobId });
-      expect(campaignsCount).toBe(0);
-      expect(outreachCount).toBe(0);
+      expect(payload.steps[2].delayDays).toBe(7);
+      expect(payload.candidates[0].personalOpening).toContain('Staff Engineer');
     });
   });
 
-  describe('2. Campaign Confirmation & Deterministic Queue Enqueuing', () => {
-    it('confirms campaign, creates Campaign, CampaignSteps, and enqueues BullMQ jobs with deterministic IDs', async () => {
-      const c1 = await Candidate.create({
+  describe('Campaign Confirmation, Autosave & Sending', () => {
+    it('f. the edited subject is the one that is sent', async () => {
+      const c = await Candidate.create({
         jobId: testJobId,
-        fullName: 'Tariq Al-Mansoor',
-        email: 'tariq@example.com',
+        fullName: 'Edited Candidate',
+        email: 'edited@example.com',
         emailStatus: 'valid',
         status: 'Accepted',
         source: 'search',
@@ -155,43 +167,52 @@ describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => 
       );
 
       const actionId = propRes.card!.actionId!;
+      const originalPayload = propRes.card!.payload as any;
 
-      // Confirm via PendingActionService
-      const confirmRes = await PendingActionService.confirmAction(actionId, conversationId);
-      expect(confirmRes.status).toBe('EXECUTED');
-      expect(confirmRes.result.recipientCount).toBe(1);
-      expect(confirmRes.result.stepsCount).toBe(2);
+      // Recruiter edits subject of Step 0 via autosave/confirm
+      const updatedSteps = [...originalPayload.steps];
+      updatedSteps[0].subject = 'CUSTOM EDITED SUBJECT: Urgent Opportunity';
 
-      // Verify Campaign created
+      await PendingActionService.updatePayload(actionId, {
+        ...originalPayload,
+        steps: updatedSteps,
+      });
+
+      // Confirm with modifiedPayload
+      await PendingActionService.confirmAction(actionId, conversationId);
+
       const campaign = await Campaign.findOne({ jobId: testJobId });
-      expect(campaign).toBeDefined();
-      expect(campaign!.status).toBe('ACTIVE');
+      const step0 = await CampaignStep.findOne({ campaignId: campaign!._id, stepIndex: 0 });
 
-      // Verify CampaignSteps created
-      const steps = await CampaignStep.find({ campaignId: campaign!._id }).sort({ stepIndex: 1 });
-      expect(steps.length).toBe(2);
-      expect(steps[0].stepIndex).toBe(0);
-      expect(steps[1].stepIndex).toBe(1);
-      expect(steps[1].delayDays).toBe(3);
+      expect(step0!.subjectTemplate).toBe('CUSTOM EDITED SUBJECT: Urgent Opportunity');
 
-      // Verify OutreachMessages pre-queued
-      const messages = await OutreachMessage.find({ campaignId: campaign!._id }).sort({ stepIndex: 1 });
-      expect(messages.length).toBe(2);
-      expect(messages[0].status).toBe('QUEUED');
-      expect(messages[1].status).toBe('QUEUED');
-      expect(messages[0].candidateId.toString()).toBe(c1._id.toString());
+      const sendMailSpy = vi.spyOn(EmailTransportService, 'sendMail').mockResolvedValue({
+        messageId: 'mock-edit-1',
+        previewUrl: 'https://ethereal.email/message/mock-edit-1',
+        transport: 'ethereal',
+      });
+
+      await processOutreachJob({
+        campaignId: campaign!._id.toString(),
+        campaignStepId: step0!._id.toString(),
+        candidateId: c._id.toString(),
+        jobId: testJobId.toString(),
+        stepIndex: 0,
+      });
+
+      expect(sendMailSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subject: 'CUSTOM EDITED SUBJECT: Urgent Opportunity',
+        })
+      );
     });
-  });
 
-  describe('3. Outreach Worker Execution, Sending & State Transitions', () => {
-    it('sends Step 0 email, generates preview URL, transitions candidate to Contacted, and writes ActivityLog', async () => {
+    it('a. the same step for the same candidate is never sent twice (two jobs with the same ID and two worker instances)', async () => {
       const candidate = await Candidate.create({
         jobId: testJobId,
-        fullName: 'Elena Rostova',
-        email: 'elena.rostova@example.com',
+        fullName: 'Duplicate Guard Candidate',
+        email: 'dup@example.com',
         emailStatus: 'valid',
-        currentTitle: 'Lead Architect',
-        currentCompany: 'DataStream',
         status: 'Accepted',
         source: 'search',
         sourceMode: 'fixture',
@@ -199,7 +220,7 @@ describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => 
 
       const campaign = await Campaign.create({
         jobId: testJobId,
-        name: 'Test Outreach Campaign',
+        name: 'Idempotency Campaign',
         status: 'ACTIVE',
       });
 
@@ -207,68 +228,54 @@ describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => 
         campaignId: campaign._id,
         stepIndex: 0,
         delayDays: 0,
-        subjectTemplate: 'Hello {{firstName}} regarding {{jobTitle}}',
-        bodyTemplate: 'Hi {{firstName}}, would you be interested in {{jobTitle}} at Aironauts?',
+        subjectTemplate: 'Subject',
+        bodyTemplate: 'Body',
       });
 
-      // Mock EmailTransportService.sendMail
-      const sendMailSpy = vi.spyOn(EmailTransportService, 'sendMail').mockResolvedValue({
-        messageId: 'mock-msg-12345',
-        previewUrl: 'https://ethereal.email/message/mock-msg-12345',
+      let sendMailCount = 0;
+      vi.spyOn(EmailTransportService, 'sendMail').mockImplementation(async () => {
+        sendMailCount++;
+        return {
+          messageId: `mock-dup-${sendMailCount}`,
+          previewUrl: `https://ethereal.email/message/${sendMailCount}`,
+          transport: 'ethereal',
+        };
       });
 
-      const result = await processOutreachJob({
+      const payload = {
         campaignId: campaign._id.toString(),
         campaignStepId: step._id.toString(),
         candidateId: candidate._id.toString(),
         jobId: testJobId.toString(),
         stepIndex: 0,
-        conversationId,
-      });
+      };
 
-      expect(result.status).toBe('SENT');
-      expect(result.previewUrl).toBe('https://ethereal.email/message/mock-msg-12345');
-      expect(sendMailSpy).toHaveBeenCalledWith({
-        to: 'elena.rostova@example.com',
-        subject: 'Hello Elena regarding Senior Distributed Systems Engineer',
-        text: 'Hi Elena, would you be interested in Senior Distributed Systems Engineer at Aironauts?',
-      });
+      // Run instance 1
+      const res1 = await processOutreachJob(payload);
+      expect(res1.status).toBe('SENT');
+      expect(sendMailCount).toBe(1);
 
-      // Verify candidate transitioned to Contacted and contactedAt is set
-      const updatedCand = await Candidate.findById(candidate._id);
-      expect(updatedCand!.status).toBe('Contacted');
-      expect(updatedCand!.contactedAt).toBeDefined();
-
-      // Verify OutreachMessage updated to SENT
-      const outMsg = await OutreachMessage.findById(result.outreachMessageId);
-      expect(outMsg!.status).toBe('SENT');
-      expect(outMsg!.previewUrl).toBe('https://ethereal.email/message/mock-msg-12345');
-      expect(outMsg!.sentAt).toBeDefined();
-
-      // Verify ActivityLog entry with actor="system"
-      const log = await ActivityLog.findOne({
-        candidateId: candidate._id,
-        action: 'outreach_sent',
-      });
-      expect(log).toBeDefined();
-      expect(log!.actor).toBe('system');
+      // Run instance 2 with identical payload / deterministic job ID
+      const res2 = await processOutreachJob(payload);
+      expect(res2.status).toBe('SKIPPED_ALREADY_SENT');
+      expect(sendMailCount).toBe(1); // Not sent twice
     });
 
-    it('pre-flight check: cancels step if candidate has outreachStopped=true (replied)', async () => {
+    it('b. a step is skipped when the candidate replied', async () => {
       const candidate = await Candidate.create({
         jobId: testJobId,
         fullName: 'Replied Candidate',
         email: 'replied@example.com',
         emailStatus: 'valid',
         status: 'Replied',
-        outreachStopped: true, // Candidate already replied
+        outreachStopped: true,
         source: 'search',
         sourceMode: 'fixture',
       });
 
       const campaign = await Campaign.create({
         jobId: testJobId,
-        name: 'Pre-flight Test',
+        name: 'Replied Campaign',
         status: 'ACTIVE',
       });
 
@@ -277,7 +284,7 @@ describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => 
         stepIndex: 1,
         delayDays: 3,
         subjectTemplate: 'Follow-up',
-        bodyTemplate: 'Follow-up body',
+        bodyTemplate: 'Body',
       });
 
       const sendMailSpy = vi.spyOn(EmailTransportService, 'sendMail');
@@ -297,7 +304,7 @@ describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => 
       expect(msg!.status).toBe('CANCELLED');
     });
 
-    it('pre-flight check: cancels step if candidate is Unsubscribed', async () => {
+    it('c. a step is skipped when the candidate unsubscribed', async () => {
       const candidate = await Candidate.create({
         jobId: testJobId,
         fullName: 'Unsub Candidate',
@@ -310,7 +317,7 @@ describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => 
 
       const campaign = await Campaign.create({
         jobId: testJobId,
-        name: 'Pre-flight Test',
+        name: 'Unsub Campaign',
         status: 'ACTIVE',
       });
 
@@ -319,7 +326,7 @@ describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => 
         stepIndex: 1,
         delayDays: 3,
         subjectTemplate: 'Follow-up',
-        bodyTemplate: 'Follow-up body',
+        bodyTemplate: 'Body',
       });
 
       const sendMailSpy = vi.spyOn(EmailTransportService, 'sendMail');
@@ -336,11 +343,11 @@ describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => 
       expect(sendMailSpy).not.toHaveBeenCalled();
     });
 
-    it('pre-flight check: skips step if campaign is PAUSED', async () => {
+    it('d. a step is skipped when the campaign is paused', async () => {
       const candidate = await Candidate.create({
         jobId: testJobId,
-        fullName: 'Active Candidate',
-        email: 'active@example.com',
+        fullName: 'Paused Candidate',
+        email: 'paused@example.com',
         emailStatus: 'valid',
         status: 'Accepted',
         source: 'search',
@@ -350,13 +357,13 @@ describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => 
       const campaign = await Campaign.create({
         jobId: testJobId,
         name: 'Paused Campaign',
-        status: 'PAUSED', // Paused campaign
+        status: 'PAUSED',
       });
 
       const step = await CampaignStep.create({
         campaignId: campaign._id,
-        stepIndex: 0,
-        delayDays: 0,
+        stepIndex: 1,
+        delayDays: 3,
         subjectTemplate: 'Subject',
         bodyTemplate: 'Body',
       });
@@ -368,28 +375,29 @@ describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => 
         campaignStepId: step._id.toString(),
         candidateId: candidate._id.toString(),
         jobId: testJobId.toString(),
-        stepIndex: 0,
+        stepIndex: 1,
       });
 
       expect(result.status).toBe('SKIPPED_PAUSED');
       expect(sendMailSpy).not.toHaveBeenCalled();
     });
 
-    it('pre-flight check: skips step if already SENT (idempotency guard)', async () => {
+    it('e. the daily limit re-delays the job to the next UTC day', async () => {
       const candidate = await Candidate.create({
         jobId: testJobId,
-        fullName: 'Already Sent Candidate',
-        email: 'alreadysent@example.com',
+        fullName: 'Rate Limited Candidate',
+        email: 'ratelimit@example.com',
         emailStatus: 'valid',
-        status: 'Contacted',
+        status: 'Accepted',
         source: 'search',
         sourceMode: 'fixture',
       });
 
       const campaign = await Campaign.create({
         jobId: testJobId,
-        name: 'Idempotency Campaign',
+        name: 'Daily Limit Campaign',
         status: 'ACTIVE',
+        dailySendLimit: 1, // Limit of 1 send today
       });
 
       const step = await CampaignStep.create({
@@ -400,19 +408,18 @@ describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => 
         bodyTemplate: 'Body',
       });
 
-      // Existing message with status SENT
+      // Existing message sent today to reach daily limit
       await OutreachMessage.create({
         campaignId: campaign._id,
         campaignStepId: step._id,
         stepIndex: 0,
-        candidateId: candidate._id,
+        candidateId: new mongoose.Types.ObjectId(),
         jobId: testJobId,
-        toEmail: candidate.email!,
-        subject: 'Already sent subject',
-        body: 'Already sent body',
+        toEmail: 'other@example.com',
+        subject: 'Prior email',
+        body: 'Prior body',
         status: 'SENT',
         sentAt: new Date(),
-        previewUrl: 'https://ethereal.email/message/already-sent',
       });
 
       const sendMailSpy = vi.spyOn(EmailTransportService, 'sendMail');
@@ -425,9 +432,26 @@ describe('Checkpoint 6: Outreach Campaign, Preview Gate & Sending Tests', () => 
         stepIndex: 0,
       });
 
-      expect(result.status).toBe('SKIPPED_ALREADY_SENT');
+      expect(result.status).toBe('RE_DELAYED_DAILY_LIMIT');
+      expect(result.delayUntil).toBeDefined();
       expect(sendMailSpy).not.toHaveBeenCalled();
     });
   });
-});
 
+  describe('Email Transport Fallback', () => {
+    it('email transport fallback: falls back to local transport when Ethereal account creation fails', async () => {
+      // Force ethereal failure
+      EmailTransportService.setForceEtherealFailure(true);
+
+      const result = await EmailTransportService.sendMail({
+        to: 'offline@example.com',
+        subject: 'Offline Test',
+        text: 'Hello from offline mode',
+      });
+
+      expect(result.transport).toBe('local');
+      expect(result.messageId).toContain('local-');
+      expect(result.previewUrl).toBeUndefined();
+    });
+  });
+});

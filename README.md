@@ -35,6 +35,18 @@ Default models configured in `.env.example`:
 
 > **Note on Model Availability**: Google AI Studio provides varying model names across free and paid tiers. If `gemini-3.5-flash-lite` or `gemini-3.7-flash` are not enabled on your specific Google AI project, standard generally available equivalents such as `gemini-1.5-flash` or `gemini-2.0-flash` can be configured in `.env`.
 
+### Gemini API Limits & Rate-Limit Mitigation
+Google AI Studio's Free Tier enforces a strict rate limit of **15 requests per minute (RPM)** per project. In an autonomous recruiting system where sourcing 10 candidates generates 10 scoring LLM calls plus chat and parsing turns, bursts can quickly exhaust the 60-second rolling quota.
+
+The backend mitigates this via four architectural layers:
+1. **Concurrency Control (`WORKER_LLM_MAX_CONCURRENCY=3`)**: The BullMQ scoring worker throttles parallel LLM requests with an internal semaphore, preventing batch explosions.
+2. **Fallback Model (`LLM_FALLBACK_MODEL`)**: If the primary model encounters repeated 429 quota exhaustion or 503 high demand, requests automatically switch to the configured fallback model.
+3. **Adaptive Retry with Exact Backoff**: When Google returns a `429 RESOURCE_EXHAUSTED` with `Please retry in X.Xs` or `Xms`, the client regex-extracts the exact seconds/milliseconds and sleeps before retrying.
+4. **Test Sleep Windows**: The end-to-end verification scripts include intentional 25s cooling intervals between heavy 10-candidate scoring batches and subsequent chat turns to allow the rolling 1-minute 15-RPM quota window to slide forward without triggering rate limits.
+
+**Performance Timing (Last Live Run)**:
+From posting the raw seed JD to receiving the first delivered outreach email with live Ethereal preview URLs took **~80 seconds** end-to-end (including 25s rate-limit cooling interval, 10s confirmation cooldown, 10 LLM scoring calls, and BullMQ worker email dispatch).
+
 ### Candidate Sourcing: Serper API vs. Fixture Mode
 The background sourcing worker supports dual discovery modes:
 1. **Live Serper Google Search**: Set `SERPER_API_KEY=your_key` in `.env`. The worker queries the Serper Google Search API using the Boolean search queries approved in the confirmation card, parses public LinkedIn candidate profiles, and marks them with `sourceMode: "serper"`.

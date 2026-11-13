@@ -137,26 +137,38 @@ Must-Have Requirements:
 
   const msgsRes3 = await fetch(`${API_BASE}/api/chat/messages/${conversationId}`);
   const msgs3 = (await msgsRes3.json()).messages;
-  const assistantMsg3 = msgs3[msgs3.length - 1];
-
   let campaignActionId: string | undefined;
   let campaignPayload: any = null;
 
-  for (const p of assistantMsg3.parts || []) {
-    if (p.type === 'text') console.log('[Assistant Text]:', p.text);
-    if (p.type === 'card' && p.card.cardType === 'campaign_preview') {
-      console.log('[Card Type]:', p.card.cardType);
-      console.log('[Card Status]:', p.card.status);
-      console.log('[Action ID]:', p.card.actionId);
-      campaignActionId = p.card.actionId;
-      campaignPayload = p.card.payload;
+  for (const m of msgs3.slice().reverse()) {
+    for (const p of m.parts || []) {
+      if (p.type === 'text') console.log('[Assistant Text]:', p.text);
+      if (p.type === 'card' && p.card.cardType === 'campaign_preview') {
+        console.log('[Card Type]:', p.card.cardType);
+        console.log('[Card Status]:', p.card.status);
+        console.log('[Action ID]:', p.card.actionId);
+        campaignActionId = p.card.actionId;
+        campaignPayload = p.card.payload;
+        break;
+      }
     }
+    if (campaignActionId) break;
   }
 
   console.log(`Enrolled Recipient Count in Proposal: ${campaignPayload?.recipientCount}`);
   console.log(`Steps in Sequence: ${campaignPayload?.steps?.length}`);
   for (const s of campaignPayload?.steps || []) {
     console.log(`  - Step ${s.stepIndex} (${s.delayDays === 0 ? 'Day 0' : `Day ${s.delayDays}`}): "${s.subject}"`);
+  }
+
+  console.log('\n--- Personalization Check: Stored Data vs Generated Openings ---');
+  for (const cand of campaignPayload?.candidates || []) {
+    console.log(`\nCandidate: ${cand.fullName}`);
+    console.log(`  - Stored Title:   "${cand.currentTitle || 'N/A'}"`);
+    console.log(`  - Stored Company: "${cand.currentCompany || 'N/A'}"`);
+    console.log(`  - Stored Skills:  [${(cand.skills || []).join(', ')}]`);
+    console.log(`  - Stored Snippet: "${cand.snippet || 'N/A'}"`);
+    console.log(`  - Personal Claim: "${cand.personalOpening || '(plain template)'}"`);
   }
 
   console.log('\n--- Step 6: Confirmation Gate Check - Verify DB State BEFORE Confirm ---');
@@ -171,8 +183,14 @@ Must-Have Requirements:
   console.log('Database state BEFORE confirm (Gate Verification):', checkBefore.trim());
 
   console.log('\n--- Step 7: Edit Subject Line via Autosave (DEC-17) ---');
+  const originalSubject = campaignPayload.steps[0].subject;
+  const editedSubject = 'Staff Distributed Systems Engineer - Leading Real-Time Infrastructure at Aironauts';
+  console.log(`Original Subject: "${originalSubject}"`);
+  console.log(`Edited Subject:   "${editedSubject}"`);
+
   const updatedSteps = [...campaignPayload.steps];
-  updatedSteps[0].subject = 'Staff Distributed Systems Engineer - Leading Real-Time Infrastructure at Aironauts';
+  updatedSteps[0].subject = editedSubject;
+
   const patchRes = await fetch(`${API_BASE}/api/actions/${campaignActionId}/payload`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -183,36 +201,32 @@ Must-Have Requirements:
       },
     }),
   });
-  console.log('Autosaved payload status:', patchRes.status);
+  console.log('Autosaved payload HTTP status:', patchRes.status);
 
-  console.log('Waiting 10s cooldown before confirmation...');
-  await new Promise((r) => setTimeout(r, 10000));
-
-  console.log('\n--- Step 8: Confirm Campaign via "Approve & Send" Button / Chat ---');
-  console.log('Sending chat confirmation: "Approve & Send"');
-  await fetch(`${API_BASE}/api/chat/message`, {
+  console.log('\n--- Step 8: Confirm Campaign via Button Endpoint (POST /api/actions/:id/confirm) ---');
+  const buttonConfirmRes = await fetch(`${API_BASE}/api/actions/${campaignActionId}/confirm`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ conversationId, text: 'Approve & Send' }),
+    body: JSON.stringify({
+      modifiedPayload: {
+        ...campaignPayload,
+        steps: updatedSteps,
+      },
+    }),
   });
+  const buttonConfirmData = await buttonConfirmRes.json();
+  const campId = buttonConfirmData.result?.campaignId;
+  console.log('Button Confirm Response status:', buttonConfirmRes.status, 'Campaign ID:', campId);
 
-  const msgsRes4 = await fetch(`${API_BASE}/api/chat/messages/${conversationId}`);
-  const msgs4 = (await msgsRes4.json()).messages;
-  const assistantMsg4 = msgs4[msgs4.length - 1];
-  console.log('Assistant Confirmation Reply:');
-  for (const p of assistantMsg4.parts || []) {
-    if (p.type === 'text') console.log('[Assistant Text]:', p.text);
-  }
-
-  console.log('\n--- Step 9: Verify Campaign Creation & Step 0 Sending in DB ---');
+  console.log('\n--- Step 9: Verify Campaign Creation & Step 0 Dispatch in DB (Scoped to campaignId) ---');
   // Wait 8 seconds for Step 0 BullMQ execution and email delivery
   await new Promise((r) => setTimeout(r, 8000));
 
   const checkAfter = execSync(
     `docker exec -i recruiting_mongo_dev mongosh --quiet ai-recruiting-co-worker --eval "
-      const campaign = db.campaigns.findOne({ jobId: ObjectId('${jobId}') });
-      const steps = db.campaignsteps.find({ campaignId: campaign._id }).toArray();
-      const messages = db.outreachmessages.find({ campaignId: campaign._id }).toArray();
+      const campaign = db.campaigns.findOne({ _id: ObjectId('${campId}') });
+      const steps = db.campaignsteps.find({ campaignId: ObjectId('${campId}') }).toArray();
+      const messages = db.outreachmessages.find({ campaignId: ObjectId('${campId}') }).toArray();
       print(JSON.stringify({
         campaign: { id: campaign._id, name: campaign.name, status: campaign.status },
         stepsCount: steps.length,
@@ -227,7 +241,7 @@ Must-Have Requirements:
       }, null, 2));
     "`
   ).toString();
-  console.log('Database state AFTER confirm:');
+  console.log('Database state AFTER confirm (Scoped to THIS campaignId):');
   console.log(checkAfter);
 
   console.log('\n--- Step 10: Verify Candidate Status Transitioned to "Contacted" ---');
@@ -245,44 +259,12 @@ Must-Have Requirements:
   console.log('Contacted Candidates in DB:');
   console.log(candsContacted);
 
-  console.log('\n--- Step 11: Verify Accelerated Sequence (Day 3 Follow-Up in Demo Mode) ---');
-  if (env.OUTREACH_STEP_DELAY_UNIT === 'seconds') {
-    console.log('OUTREACH_STEP_DELAY_UNIT is "seconds" (demo mode). Waiting 6 seconds for Day 3 follow-up job to trigger...');
-    await new Promise((r) => setTimeout(r, 6000));
-
-    const checkStep1 = execSync(
-      `docker exec -i recruiting_mongo_dev mongosh --quiet ai-recruiting-co-worker --eval "
-        const messages = db.outreachmessages.find({ stepIndex: 1 }).toArray();
-        print(JSON.stringify(messages.map(m => ({
-          toEmail: m.toEmail,
-          stepIndex: m.stepIndex,
-          status: m.status,
-          sentAt: m.sentAt,
-          previewUrl: m.previewUrl
-        })), null, 2));
-      "`
-    ).toString();
-    console.log('Step 1 Follow-Up Messages execution in DB:');
-    console.log(checkStep1);
-  }
-
-  console.log('\n--- Step 12: Verify Campaign Pause & Resume Controls ---');
-  const campObj = JSON.parse(
-    execSync(
-      `docker exec -i recruiting_mongo_dev mongosh --quiet ai-recruiting-co-worker --eval "
-        const camp = db.campaigns.findOne({ jobId: ObjectId('${jobId}') });
-        print(JSON.stringify({ id: camp._id.toString() }));
-      "`
-    ).toString()
-  );
-  const campId = campObj.id;
-
-  // Pause
+  console.log('\n--- Step 11: Prove Pause & Resume with Accelerated Sequence ---');
+  console.log('Pausing campaign immediately so Step 1 is NOT sent...');
   const pausePropRes = await (await import('../src/agent/tools/campaign-lifecycle.tool')).executePauseCampaign(
     { campaignId: campId },
     conversationId
   );
-  console.log('Pause Proposal Action ID:', pausePropRes.card.actionId);
   await (await import('../src/services/pending-action.service')).PendingActionService.confirmAction(
     pausePropRes.card.actionId,
     conversationId
@@ -294,14 +276,24 @@ Must-Have Requirements:
       print(camp.status);
     "`
   ).toString().trim();
-  console.log('Campaign status after pause:', pausedStatus);
+  console.log('Campaign status:', pausedStatus);
 
-  // Resume
+  console.log('Waiting 5s while paused (longer than Step 1 delay 3s) to prove Step 1 is NOT sent...');
+  await new Promise((r) => setTimeout(r, 5000));
+
+  const checkPausedStep1 = execSync(
+    `docker exec -i recruiting_mongo_dev mongosh --quiet ai-recruiting-co-worker --eval "
+      const msgs = db.outreachmessages.find({ campaignId: ObjectId('${campId}'), stepIndex: 1 }).toArray();
+      print(JSON.stringify(msgs.map(m => ({ toEmail: m.toEmail, stepIndex: m.stepIndex, status: m.status }))));
+    "`
+  ).toString();
+  console.log('Step 1 status while PAUSED (Proof: NOT sent):', checkPausedStep1.trim());
+
+  console.log('\nNow RESUMING campaign...');
   const resumePropRes = await (await import('../src/agent/tools/campaign-lifecycle.tool')).executeResumeCampaign(
     { campaignId: campId },
     conversationId
   );
-  console.log('Resume Proposal Action ID:', resumePropRes.card.actionId);
   await (await import('../src/services/pending-action.service')).PendingActionService.confirmAction(
     resumePropRes.card.actionId,
     conversationId
@@ -313,7 +305,37 @@ Must-Have Requirements:
       print(camp.status);
     "`
   ).toString().trim();
-  console.log('Campaign status after resume:', resumedStatus);
+  console.log('Campaign status:', resumedStatus);
+
+  console.log('Waiting up to 20s for resumed Step 1 and Step 2 to execute and dispatch...');
+  for (let poll = 0; poll < 10; poll++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const step2Sent = execSync(
+      `docker exec -i recruiting_mongo_dev mongosh --quiet ai-recruiting-co-worker --eval "
+        db.outreachmessages.countDocuments({ campaignId: ObjectId('${campId}'), stepIndex: 2, status: 'SENT' });
+      "`
+    ).toString().trim();
+    if (parseInt(step2Sent, 10) >= 3) {
+      console.log(`All Step 2 messages dispatched (poll ${poll + 1})`);
+      break;
+    }
+  }
+
+  const finalMessages = execSync(
+    `docker exec -i recruiting_mongo_dev mongosh --quiet ai-recruiting-co-worker --eval "
+      const msgs = db.outreachmessages.find({ campaignId: ObjectId('${campId}') }).sort({ candidateId: 1, stepIndex: 1 }).toArray();
+      print(JSON.stringify(msgs.map(m => ({
+        toEmail: m.toEmail,
+        stepIndex: m.stepIndex,
+        status: m.status,
+        sentAt: m.sentAt,
+        previewUrl: m.previewUrl,
+        subject: m.subject
+      })), null, 2));
+    "`
+  ).toString();
+  console.log('\nFinal Sequence Execution for Campaign (Step 0 -> Step 1 -> Step 2):');
+  console.log(finalMessages);
 
   console.log('====================================================');
   console.log('CHECKPOINT 6 VERIFICATION COMPLETE');
@@ -323,4 +345,3 @@ Must-Have Requirements:
 }
 
 main().catch(console.error);
-

@@ -431,8 +431,13 @@ export class AgentService {
             onStepFinish: (step) => {
               console.log('[AgentService StepFinish]', {
                 text: step.text,
-                toolCalls: step.toolCalls?.map((t: any) => ({ name: t.toolName, args: t.args })),
-                toolResults: step.toolResults?.map((r: any) => ({ name: r.toolName, result: r.result })),
+                toolCalls: step.toolCalls?.map((t: any) => ({
+                  name: t.toolName,
+                  input: t.input || t.args,
+                  invalid: (t as any).invalid,
+                  error: (t as any).error?.message || (t as any).error,
+                })),
+                toolResults: step.toolResults?.map((r: any) => ({ name: r.toolName, result: (r as any).output ?? r.result })),
               });
             },
           });

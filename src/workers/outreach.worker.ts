@@ -10,7 +10,7 @@ import {
   OutreachMessage,
   ActivityLog,
 } from '../models';
-import { OUTREACH_SEND_QUEUE_NAME } from '../queues';
+import { OUTREACH_SEND_QUEUE_NAME, outreachSendQueue } from '../queues';
 import { EmailTransportService } from '../services/email-transport.service';
 import { CandidateStatusService } from '../services/candidate-status.service';
 import { publishConversationEvent } from '../services/event-bus.service';
@@ -136,8 +136,24 @@ export async function processOutreachJob(
 
   const dailyLimit = campaign.dailySendLimit || env.DAILY_SEND_LIMIT || 50;
   if (sentToday >= dailyLimit) {
-    console.warn(`[OutreachWorker] Daily send limit reached for campaign (${sentToday}/${dailyLimit}).`);
-    return { outreachMessageId: outreachMsg._id.toString(), candidateId, status: 'SKIPPED_DAILY_LIMIT' };
+    console.warn(`[OutreachWorker] Daily send limit reached for campaign (${sentToday}/${dailyLimit}). Re-delaying job to next UTC day.`);
+    const nextUtcMidnight = new Date();
+    nextUtcMidnight.setUTCDate(nextUtcMidnight.getUTCDate() + 1);
+    nextUtcMidnight.setUTCHours(0, 0, 1, 0);
+    const delayMs = Math.max(nextUtcMidnight.getTime() - Date.now(), 1000);
+
+    const deterministicJobId = `outreach-${campaign._id}-${candidate._id}-${stepIndex}`;
+    await outreachSendQueue.add('send_outreach_step', payload, {
+      jobId: deterministicJobId,
+      delay: delayMs,
+    });
+
+    return {
+      outreachMessageId: outreachMsg._id.toString(),
+      candidateId,
+      status: 'RE_DELAYED_DAILY_LIMIT',
+      delayUntil: nextUtcMidnight.toISOString(),
+    };
   }
 
   // Template interpolation
@@ -148,14 +164,25 @@ export async function processOutreachJob(
     .replace(/\{\{jobTitle\}\}/g, job.title)
     .replace(/\{\{companyName\}\}/g, candidate.currentCompany || 'your team');
 
-  const renderedBody = step.bodyTemplate
+  const personalOpening = outreachMsg.personalOpening || '';
+  let renderedBody = step.bodyTemplate
+    .replace(/\{\{personalOpening\}\}/g, personalOpening)
     .replace(/\{\{candidateName\}\}/g, candidate.fullName)
     .replace(/\{\{firstName\}\}/g, firstName)
     .replace(/\{\{jobTitle\}\}/g, job.title)
     .replace(/\{\{companyName\}\}/g, candidate.currentCompany || 'your current company')
     .replace(/\{\{currentTitle\}\}/g, candidate.currentTitle || 'Engineer');
 
-  // Dispatch email via Nodemailer transport (Ethereal sandbox by default)
+  if (personalOpening && !step.bodyTemplate.includes('{{personalOpening}}')) {
+    const greetingMatch = renderedBody.match(/^(Hi [^\n]+,\n\n)/);
+    if (greetingMatch) {
+      renderedBody = renderedBody.replace(greetingMatch[0], `${greetingMatch[0]}${personalOpening}\n\n`);
+    } else {
+      renderedBody = `${personalOpening}\n\n${renderedBody}`;
+    }
+  }
+
+  // Dispatch email via Nodemailer transport (Ethereal sandbox by default, falls back to local)
   const mailResult = await EmailTransportService.sendMail({
     to: candidate.email,
     subject: renderedSubject,
@@ -167,6 +194,7 @@ export async function processOutreachJob(
   outreachMsg.sentAt = now;
   outreachMsg.subject = renderedSubject;
   outreachMsg.body = renderedBody;
+  outreachMsg.transport = mailResult.transport;
   outreachMsg.previewUrl = mailResult.previewUrl;
   await outreachMsg.save();
 

@@ -327,6 +327,11 @@ export class PendingActionService {
 
         let enqueuedCount = 0;
         for (const candidate of candidates) {
+          const candidateMeta = (effectivePayload.candidates as any[])?.find(
+            (c: any) => c.candidateId === candidate._id.toString() || c._id === candidate._id.toString()
+          );
+          const personalOpening = candidateMeta?.personalOpening || '';
+
           for (const stepDoc of createdSteps) {
             let delayMs = 0;
             if (stepDoc.delayDays > 0) {
@@ -346,6 +351,7 @@ export class PendingActionService {
               toEmail: candidate.email || 'unknown@example.com',
               subject: stepDoc.subjectTemplate,
               body: stepDoc.bodyTemplate,
+              personalOpening: stepDoc.stepIndex === 0 ? personalOpening : undefined,
               status: 'QUEUED',
             });
 
@@ -390,7 +396,55 @@ export class PendingActionService {
       case 'RESUME_CAMPAIGN': {
         const campaignId = effectivePayload.campaignId as string;
         await Campaign.findByIdAndUpdate(campaignId, { status: 'ACTIVE' });
-        result = { campaignId, status: 'ACTIVE' };
+
+        // Find all QUEUED messages for this campaign and re-enqueue them
+        const queuedMessages = await OutreachMessage.find({
+          campaignId: new mongoose.Types.ObjectId(campaignId),
+          status: 'QUEUED',
+        });
+
+        const campaignSteps = await CampaignStep.find({ campaignId: new mongoose.Types.ObjectId(campaignId) });
+        const stepMap = new Map(campaignSteps.map((s) => [s._id.toString(), s]));
+
+        let reEnqueuedCount = 0;
+        for (const msg of queuedMessages) {
+          const stepDoc = stepMap.get(msg.campaignStepId.toString());
+          const delayUnit = env.OUTREACH_STEP_DELAY_UNIT;
+          let delayMs = 0;
+          if (stepDoc && stepDoc.delayDays > 0) {
+            delayMs =
+              delayUnit === 'seconds'
+                ? stepDoc.delayDays * 1000
+                : stepDoc.delayDays * 24 * 60 * 60 * 1000;
+          }
+
+          const deterministicJobId = `outreach-${campaignId}-${msg.candidateId}-${msg.stepIndex}`;
+          try {
+            const existingJob = await outreachSendQueue.getJob(deterministicJobId);
+            if (existingJob) {
+              await existingJob.remove();
+            }
+          } catch {}
+
+          await outreachSendQueue.add(
+            'send_outreach_step',
+            {
+              campaignId,
+              campaignStepId: msg.campaignStepId.toString(),
+              candidateId: msg.candidateId.toString(),
+              jobId: msg.jobId.toString(),
+              stepIndex: msg.stepIndex,
+              conversationId: atomicResult.conversationId.toString(),
+            },
+            {
+              jobId: deterministicJobId,
+              delay: delayMs,
+            }
+          );
+          reEnqueuedCount++;
+        }
+
+        result = { campaignId, status: 'ACTIVE', reEnqueuedCount };
         break;
       }
       default:
