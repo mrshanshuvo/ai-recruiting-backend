@@ -48,23 +48,36 @@ export async function executeProposeCandidateReview(
     }
   }
 
-  const orClauses: any[] = [];
+  const { resolveCandidateByName } = await import('../../utils/candidate-resolver');
+  const candidatesMap = new Map<string, any>();
+
+  // Resolve direct ObjectIds
   if (objectIds.length > 0) {
-    orClauses.push({ _id: { $in: objectIds } });
-  }
-  if (names.length > 0) {
-    orClauses.push({
-      fullName: { $in: names.map((n) => new RegExp(`^${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')) },
-    });
+    const directCands = await Candidate.find({
+      jobId: input.jobId,
+      _id: { $in: objectIds },
+    }).lean();
+    for (const c of directCands) {
+      candidatesMap.set(c._id.toString(), c);
+    }
   }
 
-  let candidates: any[] = [];
-  if (orClauses.length > 0) {
-    candidates = await Candidate.find({
-      jobId: input.jobId,
-      $or: orClauses,
-    }).lean();
+  // Resolve candidate names with exact/unique partial/ambiguous check
+  for (const name of names) {
+    const res = await resolveCandidateByName(input.jobId, name);
+    if (!res.success) {
+      return {
+        success: false,
+        error: res.error,
+      };
+    }
+    if (res.candidate) {
+      const doc = res.candidate.toObject ? res.candidate.toObject() : res.candidate;
+      candidatesMap.set(doc._id.toString(), doc);
+    }
   }
+
+  let candidates: any[] = Array.from(candidatesMap.values());
 
   // Fallback: If no specific candidates resolved or topRemainingCount requested, pick top Sourced candidates
   if (candidates.length === 0) {

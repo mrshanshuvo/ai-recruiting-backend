@@ -11,6 +11,7 @@ import {
 import { PendingActionService } from '../services/pending-action.service';
 import { executeFindCandidates } from '../agent/tools/job-tools';
 import { executeProposeCandidateReview } from '../agent/tools/propose-candidate-review.tool';
+import { resolveCandidateByName } from '../utils/candidate-resolver';
 
 describe('Checkpoint 5: Candidate Status Machine, Review, and Confirmation Gate', () => {
   let testJobId: mongoose.Types.ObjectId;
@@ -80,17 +81,17 @@ describe('Checkpoint 5: Candidate Status Machine, Review, and Confirmation Gate'
       expect(log1?.details?.reason).toBe('Good fit');
 
       // Accepted -> Contacted (sets contactedAt)
-      const res2 = await CandidateStatusService.transition(cand._id, 'Contacted', 'worker');
+      const res2 = await CandidateStatusService.transition(cand._id, 'Contacted', 'system');
       expect(res2.newStatus).toBe('Contacted');
       const updated2 = await Candidate.findById(cand._id);
       expect(updated2?.contactedAt).toBeDefined();
 
       // Contacted -> Replied
-      const res3 = await CandidateStatusService.transition(cand._id, 'Replied', 'worker');
+      const res3 = await CandidateStatusService.transition(cand._id, 'Replied', 'system');
       expect(res3.newStatus).toBe('Replied');
 
       // Replied -> Interested
-      const res4 = await CandidateStatusService.transition(cand._id, 'Interested', 'worker');
+      const res4 = await CandidateStatusService.transition(cand._id, 'Interested', 'system');
       expect(res4.newStatus).toBe('Interested');
 
       // Interested -> Meeting booked
@@ -98,7 +99,7 @@ describe('Checkpoint 5: Candidate Status Machine, Review, and Confirmation Gate'
       expect(res5.newStatus).toBe('Meeting booked');
 
       // Meeting booked -> Interviewed
-      const res6 = await CandidateStatusService.transition(cand._id, 'Interviewed', 'user');
+      const res6 = await CandidateStatusService.transition(cand._id, 'Interviewed', 'recruiter');
       expect(res6.newStatus).toBe('Interviewed');
 
       // Interviewed -> Shortlisted
@@ -139,7 +140,7 @@ describe('Checkpoint 5: Candidate Status Machine, Review, and Confirmation Gate'
 
     it('allows Replied -> Replied for Question reply class (DEC-01)', async () => {
       const cand = await createCandidate({ status: 'Replied' });
-      const res = await CandidateStatusService.transition(cand._id, 'Replied', 'worker', 'Question asked');
+      const res = await CandidateStatusService.transition(cand._id, 'Replied', 'system', 'Question asked');
       expect(res.newStatus).toBe('Replied');
     });
   });
@@ -151,7 +152,7 @@ describe('Checkpoint 5: Candidate Status Machine, Review, and Confirmation Gate'
         contactedAt: new Date(),
       });
 
-      const res = await CandidateStatusService.transition(cand._id, 'Unsubscribed', 'worker', 'Candidate replied STOP');
+      const res = await CandidateStatusService.transition(cand._id, 'Unsubscribed', 'system', 'Candidate replied STOP');
       expect(res.newStatus).toBe('Unsubscribed');
 
       const updated = await Candidate.findById(cand._id);
@@ -170,7 +171,7 @@ describe('Checkpoint 5: Candidate Status Machine, Review, and Confirmation Gate'
         contactedAt: new Date(Date.now() - 3600000),
       });
 
-      const res = await CandidateStatusService.transition(cand._id, 'Unsubscribed', 'worker');
+      const res = await CandidateStatusService.transition(cand._id, 'Unsubscribed', 'system');
       expect(res.newStatus).toBe('Unsubscribed');
       const updated = await Candidate.findById(cand._id);
       expect(updated?.statusBeforeUnsubscribe).toBe('Rejected');
@@ -236,7 +237,7 @@ describe('Checkpoint 5: Candidate Status Machine, Review, and Confirmation Gate'
       });
 
       await expect(
-        CandidateStatusService.transition(cand._id, 'Contacted', 'worker')
+        CandidateStatusService.transition(cand._id, 'Contacted', 'system')
       ).rejects.toThrow(InvalidStateTransitionError);
     });
 
@@ -263,7 +264,7 @@ describe('Checkpoint 5: Candidate Status Machine, Review, and Confirmation Gate'
       ).rejects.toThrow(InvalidStateTransitionError);
 
       await expect(
-        CandidateStatusService.transition(cand._id, 'Contacted', 'worker')
+        CandidateStatusService.transition(cand._id, 'Contacted', 'system')
       ).rejects.toThrow(InvalidStateTransitionError);
     });
   });
@@ -369,12 +370,12 @@ describe('Checkpoint 5: Candidate Status Machine, Review, and Confirmation Gate'
 
       expect(toolRes.success).toBe(true);
       expect(toolRes.card).toBeDefined();
-      expect(toolRes.card.cardType).toBe('candidate_table');
-      expect(toolRes.card.status).toBe('pending');
-      expect(toolRes.card.actionId).toBeDefined();
-      expect(toolRes.card.payload.candidates.length).toBe(2);
+      expect(toolRes.card!.cardType).toBe('candidate_table');
+      expect(toolRes.card!.status).toBe('pending');
+      expect(toolRes.card!.actionId).toBeDefined();
+      expect(toolRes.card!.payload.candidates.length).toBe(2);
 
-      const actionId = toolRes.card.actionId;
+      const actionId = toolRes.card!.actionId!;
 
       // Invariant: Statuses MUST NOT change before confirmation
       const cand1Before = await Candidate.findById(c1._id);
@@ -416,7 +417,7 @@ describe('Checkpoint 5: Candidate Status Machine, Review, and Confirmation Gate'
         conversationId
       );
 
-      const actionId = toolRes.card.actionId;
+      const actionId = toolRes.card!.actionId!;
 
       // Cancel the action
       const cancelRes = await PendingActionService.cancelAction(actionId, conversationId, 'User changed mind');
@@ -432,4 +433,59 @@ describe('Checkpoint 5: Candidate Status Machine, Review, and Confirmation Gate'
       ).rejects.toThrow();
     });
   });
+
+  describe('7. Ambiguous Name Resolution (Item 4)', () => {
+    it('matches exact full name case-insensitively', async () => {
+      await createCandidate({ fullName: 'Sarah Chen' });
+      await createCandidate({ fullName: 'Sarah Chen-Alt' });
+
+      const res = await resolveCandidateByName(testJobId, 'sarah chen');
+      expect(res.success).toBe(true);
+      expect(res.candidate?.fullName).toBe('Sarah Chen');
+    });
+
+    it('matches a unique partial name when only one candidate matches', async () => {
+      await createCandidate({ fullName: 'Tariq Al-Mansoor' });
+
+      const res = await resolveCandidateByName(testJobId, 'Tariq');
+      expect(res.success).toBe(true);
+      expect(res.candidate?.fullName).toBe('Tariq Al-Mansoor');
+    });
+
+    it('refuses to guess and returns error with candidate names on ambiguous partial match', async () => {
+      await createCandidate({ fullName: 'Alex Rivera' });
+      await createCandidate({ fullName: 'Alex Mercer' });
+
+      const res = await resolveCandidateByName(testJobId, 'Alex');
+      expect(res.success).toBe(false);
+      expect(res.error).toContain('ambiguous and matches multiple candidates');
+      expect(res.ambiguousCandidates).toContain('Alex Rivera');
+      expect(res.ambiguousCandidates).toContain('Alex Mercer');
+    });
+
+    it('returns candidate not found on non-matching name', async () => {
+      const res = await resolveCandidateByName(testJobId, 'Nonexistent Candidate');
+      expect(res.success).toBe(false);
+      expect(res.error).toContain('not found');
+      expect(res.ambiguousCandidates).toEqual([]);
+    });
+
+    it('propose_candidate_review rejects ambiguous candidate names with clear error', async () => {
+      await createCandidate({ fullName: 'John Doe' });
+      await createCandidate({ fullName: 'John Smith' });
+
+      const res = await executeProposeCandidateReview(
+        {
+          jobId: testJobIdStr,
+          candidateIds: ['John'],
+          decision: 'accept',
+        },
+        new mongoose.Types.ObjectId().toString()
+      );
+
+      expect(res.success).toBe(false);
+      expect(res.error).toContain('ambiguous and matches multiple candidates');
+    });
+  });
 });
+

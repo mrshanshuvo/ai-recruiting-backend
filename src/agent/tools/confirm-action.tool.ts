@@ -76,6 +76,14 @@ export async function executeConfirmAction(
       const jobTitle = (result.result?.jobTitle as string) || 'the role';
       const count = result.result?.targetCount || (result.effectivePayload as any)?.targetCount || 10;
       message = `Started candidate sourcing for '${jobTitle}'. Sourcing up to ${count} candidate profiles.`;
+    } else if (result.result?.campaignId && result.result?.recipientCount !== undefined) {
+      const title = (result.result?.jobTitle as string) || (result.effectivePayload as any)?.jobTitle || 'the role';
+      const count = result.result?.recipientCount ?? (result.effectivePayload as any)?.recipientCount ?? 0;
+      message = `Launched outreach campaign for '${title}' (${count} candidate(s)). Initial emails (Step 0) dispatched.`;
+    } else if (result.result?.status === 'PAUSED') {
+      message = `Paused outreach campaign. Scheduled follow-ups are suspended.`;
+    } else if (result.result?.status === 'ACTIVE' && result.result?.campaignId) {
+      message = `Resumed outreach campaign. Scheduled follow-ups are now active.`;
     } else if (result.result?.decision || (result.effectivePayload as any)?.candidateIds) {
       const decision = (result.result?.decision as string) || 'accept';
       const count = result.result?.updatedCount ?? (result.effectivePayload as any)?.candidateIds?.length ?? 0;

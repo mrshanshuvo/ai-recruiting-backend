@@ -1,9 +1,19 @@
 import mongoose from 'mongoose';
-import { PendingAction, IPendingAction, ActionType, CandidateStatus } from '../models';
+import {
+  PendingAction,
+  IPendingAction,
+  ActionType,
+  CandidateStatus,
+  Campaign,
+  CampaignStep,
+  OutreachMessage,
+  Candidate,
+} from '../models';
 import { JobService, jobPayloadSchema } from './job.service';
 import { CandidateStatusService } from './candidate-status.service';
 import { publishConversationEvent } from './event-bus.service';
-import { sourcingQueue } from '../queues';
+import { sourcingQueue, outreachSendQueue } from '../queues';
+import { env } from '../config/env';
 
 export class ActionError extends Error {
   public statusCode: number;
@@ -276,6 +286,111 @@ export class PendingActionService {
           totalRequested: candidateIds.length,
           results: bulkResult.results,
         };
+        break;
+      }
+      case 'SEND_CAMPAIGN': {
+        const jobId = effectivePayload.jobId as string;
+        const jobTitle = (effectivePayload.jobTitle as string) || 'Job';
+        const campaignName = (effectivePayload.name as string) || `${jobTitle} Outreach Campaign`;
+        const candidateIds = (effectivePayload.candidateIds as string[]) || [];
+        const steps = (effectivePayload.steps as Array<{
+          stepIndex: number;
+          delayDays: number;
+          subject: string;
+          bodyTemplate: string;
+        }>) || [];
+
+        // 1. Create Campaign
+        const campaign = await Campaign.create({
+          jobId: new mongoose.Types.ObjectId(jobId),
+          name: campaignName,
+          status: 'ACTIVE',
+          dailySendLimit: env.DAILY_SEND_LIMIT || 50,
+        });
+
+        // 2. Create CampaignSteps
+        const createdSteps: any[] = [];
+        for (const s of steps) {
+          const stepDoc = await CampaignStep.create({
+            campaignId: campaign._id,
+            stepIndex: s.stepIndex,
+            delayDays: s.delayDays,
+            subjectTemplate: s.subject,
+            bodyTemplate: s.bodyTemplate,
+          });
+          createdSteps.push(stepDoc);
+        }
+
+        // 3. Find candidates and enqueue BullMQ jobs for each candidate and step
+        const candidates = await Candidate.find({ _id: { $in: candidateIds } }).lean();
+        const delayUnit = env.OUTREACH_STEP_DELAY_UNIT; // 'seconds' | 'days'
+
+        let enqueuedCount = 0;
+        for (const candidate of candidates) {
+          for (const stepDoc of createdSteps) {
+            let delayMs = 0;
+            if (stepDoc.delayDays > 0) {
+              delayMs =
+                delayUnit === 'seconds'
+                  ? stepDoc.delayDays * 1000
+                  : stepDoc.delayDays * 24 * 60 * 60 * 1000;
+            }
+
+            // Create pre-queued OutreachMessage record
+            await OutreachMessage.create({
+              campaignId: campaign._id,
+              campaignStepId: stepDoc._id,
+              stepIndex: stepDoc.stepIndex,
+              candidateId: candidate._id,
+              jobId: new mongoose.Types.ObjectId(jobId),
+              toEmail: candidate.email || 'unknown@example.com',
+              subject: stepDoc.subjectTemplate,
+              body: stepDoc.bodyTemplate,
+              status: 'QUEUED',
+            });
+
+            // Enqueue with deterministic job ID per ADR-0006 (using dash separator for BullMQ v5 compatibility)
+            const deterministicJobId = `outreach-${campaign._id}-${candidate._id}-${stepDoc.stepIndex}`;
+            await outreachSendQueue.add(
+              'send_outreach_step',
+              {
+                campaignId: campaign._id.toString(),
+                campaignStepId: stepDoc._id.toString(),
+                candidateId: candidate._id.toString(),
+                jobId,
+                stepIndex: stepDoc.stepIndex,
+                conversationId: atomicResult.conversationId.toString(),
+              },
+              {
+                jobId: deterministicJobId,
+                delay: delayMs,
+              }
+            );
+            enqueuedCount++;
+          }
+        }
+
+        result = {
+          campaignId: campaign._id.toString(),
+          name: campaign.name,
+          jobId,
+          jobTitle,
+          recipientCount: candidates.length,
+          stepsCount: createdSteps.length,
+          enqueuedJobsCount: enqueuedCount,
+        };
+        break;
+      }
+      case 'PAUSE_CAMPAIGN': {
+        const campaignId = effectivePayload.campaignId as string;
+        await Campaign.findByIdAndUpdate(campaignId, { status: 'PAUSED' });
+        result = { campaignId, status: 'PAUSED' };
+        break;
+      }
+      case 'RESUME_CAMPAIGN': {
+        const campaignId = effectivePayload.campaignId as string;
+        await Campaign.findByIdAndUpdate(campaignId, { status: 'ACTIVE' });
+        result = { campaignId, status: 'ACTIVE' };
         break;
       }
       default:

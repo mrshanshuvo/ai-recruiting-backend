@@ -32,6 +32,20 @@ import {
   getCampaignInputSchema,
   executeGetCampaign,
 } from './tools/job-tools';
+import {
+  showCandidatesInputSchema,
+  executeShowCandidates,
+} from './tools/show-candidates.tool';
+import {
+  proposeCampaignInputSchema,
+  executeProposeCampaign,
+} from './tools/propose-campaign.tool';
+import {
+  pauseCampaignInputSchema,
+  executePauseCampaign,
+  resumeCampaignInputSchema,
+  executeResumeCampaign,
+} from './tools/campaign-lifecycle.tool';
 
 export async function executeWithRetry<T>(
   fn: (modelName: string) => Promise<T>,
@@ -46,8 +60,11 @@ export async function executeWithRetry<T>(
       return await fn(primaryModel);
     } catch (err: any) {
       lastError = err;
-      const rawErr = err?.lastError || err?.cause || err;
-      const errorString = `${err?.message || ''} ${rawErr?.message || ''} ${rawErr?.responseBody || ''}`;
+      const rawErr = err?.lastError || err?.cause || (err?.errors && err.errors[0]) || err;
+      const errorsStr = Array.isArray(err?.errors)
+        ? err.errors.map((e: any) => `${e?.message || ''} ${e?.responseBody || ''}`).join(' ')
+        : '';
+      const errorString = `${err?.message || ''} ${rawErr?.message || ''} ${rawErr?.responseBody || ''} ${errorsStr}`;
 
       const status =
         rawErr?.status ||
@@ -69,11 +86,14 @@ export async function executeWithRetry<T>(
       }
 
       let backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-      const match = errorString.match(/retry in ([0-9.]+)s/i);
+      const match = errorString.match(/retry in ([0-9.]+)\s*(s|ms)?/i);
       if (match && match[1]) {
-        backoffMs = Math.min(Math.ceil(parseFloat(match[1])) * 1000 + 1500, 35000);
+        const val = parseFloat(match[1]);
+        const unit = match[2]?.toLowerCase() || 's';
+        const ms = unit === 'ms' ? val : val * 1000;
+        backoffMs = Math.min(Math.ceil(ms) + 2000, 45000);
       } else if (status === 429) {
-        backoffMs = 5000 * attempt;
+        backoffMs = 12000 * attempt;
       }
 
       console.warn(
@@ -279,11 +299,110 @@ export class AgentService {
         },
       }),
 
+      show_candidates: tool({
+        description:
+          'Displays a table of candidates for a job as an interactive candidate_table card in browse mode (sorted by score descending with direct per-row Accept/Reject actions). Use this whenever the recruiter asks to see, view, or show candidates.',
+        inputSchema: showCandidatesInputSchema,
+        execute: async (input: z.infer<typeof showCandidatesInputSchema>) => {
+          const res = await executeShowCandidates(input);
+          if (res.card) {
+            parts.push({
+              type: 'card',
+              card: res.card as any,
+            });
+            await publishConversationEvent(conversationId, 'CHAT_PART', {
+              messageId: assistantMsgId.toString(),
+              partIndex: parts.length - 1,
+              part: {
+                type: 'card',
+                card: res.card as any,
+              },
+            });
+          }
+          return res;
+        },
+      }),
+
       get_campaign: tool({
         description: 'Gets recruitment campaign details and outreach sequence for a job.',
         inputSchema: getCampaignInputSchema,
         execute: async (input: z.infer<typeof getCampaignInputSchema>) => {
           return executeGetCampaign(input);
+        },
+      }),
+
+      propose_campaign: tool({
+        description:
+          'Proposes an outreach email campaign for Accepted candidates of a job. Returns an interactive campaign_preview card with editable subject and body templates. Use this when the user asks to start/propose an outreach campaign, draft emails, or reach out to candidates.',
+        inputSchema: proposeCampaignInputSchema,
+        execute: async (input: z.infer<typeof proposeCampaignInputSchema>) => {
+          console.log('[AgentService] propose_campaign execute called with input:', input);
+          const res = await executeProposeCampaign(input, conversationId);
+          console.log('[AgentService] propose_campaign execute returned:', res.success, res.error);
+          toolMessage = res.message || res.error || 'I prepared an outreach proposal, please confirm.';
+          if (res.card) {
+            parts.push({
+              type: 'card',
+              card: res.card as any,
+            });
+            await publishConversationEvent(conversationId, 'CHAT_PART', {
+              messageId: assistantMsgId.toString(),
+              partIndex: parts.length - 1,
+              part: {
+                type: 'card',
+                card: res.card as any,
+              },
+            });
+          }
+          return res;
+        },
+      }),
+
+      pause_campaign: tool({
+        description: 'Proposes pausing an active outreach campaign. Suspends all scheduled follow-up steps.',
+        inputSchema: pauseCampaignInputSchema,
+        execute: async (input: z.infer<typeof pauseCampaignInputSchema>) => {
+          const res = await executePauseCampaign(input, conversationId);
+          toolMessage = res.message || res.error || 'I prepared to pause the campaign, please confirm.';
+          if (res.card) {
+            parts.push({
+              type: 'card',
+              card: res.card as any,
+            });
+            await publishConversationEvent(conversationId, 'CHAT_PART', {
+              messageId: assistantMsgId.toString(),
+              partIndex: parts.length - 1,
+              part: {
+                type: 'card',
+                card: res.card as any,
+              },
+            });
+          }
+          return res;
+        },
+      }),
+
+      resume_campaign: tool({
+        description: 'Proposes resuming a paused outreach campaign.',
+        inputSchema: resumeCampaignInputSchema,
+        execute: async (input: z.infer<typeof resumeCampaignInputSchema>) => {
+          const res = await executeResumeCampaign(input, conversationId);
+          toolMessage = res.message || res.error || 'I prepared to resume the campaign, please confirm.';
+          if (res.card) {
+            parts.push({
+              type: 'card',
+              card: res.card as any,
+            });
+            await publishConversationEvent(conversationId, 'CHAT_PART', {
+              messageId: assistantMsgId.toString(),
+              partIndex: parts.length - 1,
+              part: {
+                type: 'card',
+                card: res.card as any,
+              },
+            });
+          }
+          return res;
         },
       }),
     };
@@ -302,10 +421,20 @@ export class AgentService {
               hasToolCall('parse_and_propose_job'),
               hasToolCall('request_candidate_sourcing'),
               hasToolCall('propose_candidate_review'),
+              hasToolCall('propose_campaign'),
+              hasToolCall('pause_campaign'),
+              hasToolCall('resume_campaign'),
               hasToolCall('confirm_action'),
               hasToolCall('cancel_action'),
               isStepCount(3),
             ],
+            onStepFinish: (step) => {
+              console.log('[AgentService StepFinish]', {
+                text: step.text,
+                toolCalls: step.toolCalls?.map((t: any) => ({ name: t.toolName, args: t.args })),
+                toolResults: step.toolResults?.map((r: any) => ({ name: r.toolName, result: r.result })),
+              });
+            },
           });
 
           for await (const chunk of result.textStream) {
@@ -315,6 +444,9 @@ export class AgentService {
               delta: chunk,
             });
           }
+
+          // Await result.response to surface any streaming or multi-step tool errors
+          await result.response;
 
           // Token usage accounting
           try {
@@ -346,7 +478,10 @@ export class AgentService {
       );
 
       // Save assistant message
-      const finalText = fullText.trim() || toolMessage || 'I have processed your request.';
+      const defaultText = parts.some((p) => p.type === 'card')
+        ? 'I prepared this, please confirm.'
+        : 'I have processed your request.';
+      const finalText = fullText.trim() || toolMessage || defaultText;
       parts.unshift({
         type: 'text',
         text: finalText,
@@ -357,6 +492,17 @@ export class AgentService {
           messageId: assistantMsgId.toString(),
           delta: finalText,
         });
+      }
+
+      // Publish card parts over SSE so frontend receives them live
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i].type === 'card') {
+          await publishConversationEvent(conversationId, 'CHAT_PART', {
+            messageId: assistantMsgId.toString(),
+            partIndex: i,
+            part: parts[i],
+          });
+        }
       }
 
       await Message.create({
@@ -370,17 +516,17 @@ export class AgentService {
       return assistantMsgId.toString();
     } catch (error) {
       console.error('[AgentService.runTurn Error]', error);
-      const friendlyMessage =
-        'I am currently experiencing high demand or connectivity issues with the AI service. Please try your request again in a few moments.';
+      const rawErrorMsg = (error as any)?.message || String(error);
+      const errorMessage = `AI Error: ${rawErrorMsg}`;
 
       parts.unshift({
         type: 'text',
-        text: friendlyMessage,
+        text: errorMessage,
       });
 
       await publishConversationEvent(conversationId, 'CHAT_DELTA', {
         messageId: assistantMsgId.toString(),
-        delta: friendlyMessage,
+        delta: errorMessage,
       });
 
       await Message.create({

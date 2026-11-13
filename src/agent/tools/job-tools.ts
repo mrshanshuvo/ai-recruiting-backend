@@ -69,16 +69,101 @@ export const findCandidatesInputSchema = z.object({
 
 export async function executeFindCandidates(input: z.infer<typeof findCandidatesInputSchema>) {
   const { Candidate } = await import('../../models');
-  const query: Record<string, unknown> = {};
-  if (input.jobId) query.jobId = input.jobId;
-  if (input.status) query.status = input.status;
-  if (input.name) query.fullName = { $regex: input.name, $options: 'i' };
+  const { escapeRegex } = await import('../../utils/candidate-resolver');
+
+  const baseQuery: Record<string, unknown> = {};
+  if (input.jobId) baseQuery.jobId = input.jobId;
+  if (input.status) baseQuery.status = input.status;
   if (typeof input.minScore === 'number') {
-    query.score = { $gte: input.minScore };
+    baseQuery.score = { $gte: input.minScore };
   }
 
   const limit = input.limit || 20;
-  const candidates = await Candidate.find(query).sort({ score: -1 }).limit(limit).lean();
+
+  // Ambiguous name matching rule if input.name is provided
+  if (input.name && input.name.trim()) {
+    const trimmed = input.name.trim();
+
+    // 1. Exact match (case-insensitive)
+    const exactCandidates = await Candidate.find({
+      ...baseQuery,
+      fullName: { $regex: new RegExp(`^${escapeRegex(trimmed)}$`, 'i') },
+    }).sort({ score: -1 }).limit(limit).lean();
+
+    if (exactCandidates.length > 0) {
+      return {
+        success: true,
+        count: exactCandidates.length,
+        candidates: exactCandidates.map((c) => ({
+          id: c._id.toString(),
+          candidateId: c._id.toString(),
+          fullName: c.fullName,
+          email: c.email || null,
+          emailStatus: c.emailStatus,
+          status: c.status,
+          score: c.score,
+          scoreReason: c.scoreReason,
+          sourceMode: c.sourceMode,
+          profileUrl: c.profileUrl,
+          currentTitle: c.currentTitle,
+          currentCompany: c.currentCompany,
+          skills: c.skills,
+        })),
+      };
+    }
+
+    // 2. Partial match
+    const partialCandidates = await Candidate.find({
+      ...baseQuery,
+      fullName: { $regex: new RegExp(escapeRegex(trimmed), 'i') },
+    }).sort({ score: -1 }).limit(limit).lean();
+
+    if (partialCandidates.length > 1) {
+      const names = partialCandidates.map((c) => c.fullName);
+      return {
+        success: false,
+        error: `Name "${input.name}" is ambiguous and matches multiple candidates: ${names.join(', ')}. Please specify which candidate you mean.`,
+        count: partialCandidates.length,
+        candidates: partialCandidates.map((c) => ({
+          id: c._id.toString(),
+          candidateId: c._id.toString(),
+          fullName: c.fullName,
+          email: c.email || null,
+          emailStatus: c.emailStatus,
+          status: c.status,
+          score: c.score,
+          scoreReason: c.scoreReason,
+          sourceMode: c.sourceMode,
+          profileUrl: c.profileUrl,
+          currentTitle: c.currentTitle,
+          currentCompany: c.currentCompany,
+          skills: c.skills,
+        })),
+      };
+    }
+
+    return {
+      success: true,
+      count: partialCandidates.length,
+      candidates: partialCandidates.map((c) => ({
+        id: c._id.toString(),
+        candidateId: c._id.toString(),
+        fullName: c.fullName,
+        email: c.email || null,
+        emailStatus: c.emailStatus,
+        status: c.status,
+        score: c.score,
+        scoreReason: c.scoreReason,
+        sourceMode: c.sourceMode,
+        profileUrl: c.profileUrl,
+        currentTitle: c.currentTitle,
+        currentCompany: c.currentCompany,
+        skills: c.skills,
+      })),
+    };
+  }
+
+  const candidates = await Candidate.find(baseQuery).sort({ score: -1 }).limit(limit).lean();
   return {
     success: true,
     count: candidates.length,
