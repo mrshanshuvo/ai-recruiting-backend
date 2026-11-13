@@ -4,6 +4,7 @@ import { env } from './config/env';
 import { connectDB } from './config/db';
 import { connectRedis } from './config/redis';
 import { healthRouter } from './routes/health.route';
+import { chatRouter } from './routes/chat.route';
 
 const app = express();
 
@@ -15,6 +16,9 @@ app.use(express.json());
 
 // Health check endpoint (GET /health)
 app.use(healthRouter);
+
+// API routes (/api)
+app.use('/api', chatRouter);
 
 // Fallback error handler
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -46,4 +50,3 @@ async function startServer(): Promise<void> {
 startServer();
 
 export { app };
-
