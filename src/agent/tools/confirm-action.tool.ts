@@ -76,6 +76,10 @@ export async function executeConfirmAction(
       const jobTitle = (result.result?.jobTitle as string) || 'the role';
       const count = result.result?.targetCount || (result.effectivePayload as any)?.targetCount || 10;
       message = `Started candidate sourcing for '${jobTitle}'. Sourcing up to ${count} candidate profiles.`;
+    } else if (result.result?.decision || (result.effectivePayload as any)?.candidateIds) {
+      const decision = (result.result?.decision as string) || 'accept';
+      const count = result.result?.updatedCount ?? (result.effectivePayload as any)?.candidateIds?.length ?? 0;
+      message = `Confirmed bulk review: ${count} candidate(s) marked as ${decision === 'reject' ? 'Rejected' : 'Accepted'}.`;
     } else {
       const title = (result.result?.title as string) || (result.effectivePayload as any)?.title || 'Job Proposal';
       const diffs = formatFieldDiff(result.originalPayload, result.effectivePayload);

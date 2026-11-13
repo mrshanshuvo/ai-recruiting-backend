@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
-import { PendingAction, IPendingAction, ActionType } from '../models';
+import { PendingAction, IPendingAction, ActionType, CandidateStatus } from '../models';
 import { JobService, jobPayloadSchema } from './job.service';
+import { CandidateStatusService } from './candidate-status.service';
 import { publishConversationEvent } from './event-bus.service';
 import { sourcingQueue } from '../queues';
 
@@ -249,6 +250,31 @@ export class PendingActionService {
           targetCount,
           searchQueries,
           bullJobId: bullJob.id,
+        };
+        break;
+      }
+      case 'BULK_REVIEW': {
+        const candidateIds = (effectivePayload.candidateIds as string[]) || [];
+        const decision = (effectivePayload.decision as string) || 'accept';
+        const targetStatus: CandidateStatus =
+          (effectivePayload.targetStatus as CandidateStatus) ||
+          (decision === 'accept' ? 'Accepted' : 'Rejected');
+        const reason = (effectivePayload.reason as string) || `Bulk review (${decision})`;
+
+        const bulkResult = await CandidateStatusService.bulkTransition(
+          candidateIds,
+          targetStatus,
+          'agent',
+          reason
+        );
+
+        result = {
+          jobId: effectivePayload.jobId,
+          decision,
+          targetStatus,
+          updatedCount: bulkResult.updatedCount,
+          totalRequested: candidateIds.length,
+          results: bulkResult.results,
         };
         break;
       }

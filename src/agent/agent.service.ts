@@ -14,6 +14,10 @@ import {
   requestCandidateSourcingInputSchema,
   executeRequestCandidateSourcing,
 } from './tools/request-candidate-sourcing.tool';
+import {
+  proposeCandidateReviewInputSchema,
+  executeProposeCandidateReview,
+} from './tools/propose-candidate-review.tool';
 import { confirmActionInputSchema, executeConfirmAction } from './tools/confirm-action.tool';
 import { cancelActionInputSchema, executeCancelAction } from './tools/cancel-action.tool';
 import {
@@ -42,22 +46,36 @@ export async function executeWithRetry<T>(
       return await fn(primaryModel);
     } catch (err: any) {
       lastError = err;
+      const rawErr = err?.lastError || err?.cause || err;
+      const errorString = `${err?.message || ''} ${rawErr?.message || ''} ${rawErr?.responseBody || ''}`;
+
       const status =
+        rawErr?.status ||
+        rawErr?.statusCode ||
         err?.status ||
         err?.statusCode ||
-        (err?.message?.includes('503') ? 503 : undefined) ||
-        (err?.message?.includes('429') ? 429 : undefined);
+        (errorString.includes('503') ? 503 : undefined) ||
+        (errorString.includes('429') ? 429 : undefined);
+
       const isRetryable =
         status === 503 ||
         status === 429 ||
-        err?.message?.includes('high demand') ||
-        err?.message?.includes('quota');
+        errorString.includes('high demand') ||
+        errorString.includes('quota') ||
+        errorString.includes('RESOURCE_EXHAUSTED');
 
       if (!isRetryable || attempt === maxRetries) {
         break;
       }
 
-      const backoffMs = Math.min(500 * Math.pow(2, attempt - 1), 3000);
+      let backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+      const match = errorString.match(/retry in ([0-9.]+)s/i);
+      if (match && match[1]) {
+        backoffMs = Math.min(Math.ceil(parseFloat(match[1])) * 1000 + 1500, 35000);
+      } else if (status === 429) {
+        backoffMs = 5000 * attempt;
+      }
+
       console.warn(
         `[AgentService] Primary model ${primaryModel} failed with ${status || 'retryable error'} on attempt ${attempt}. Retrying in ${backoffMs}ms...`
       );
@@ -180,6 +198,31 @@ export class AgentService {
         },
       }),
 
+      propose_candidate_review: tool({
+        description:
+          'Proposes reviewing and accepting or rejecting candidates in bulk (e.g. "accept top 5", "reject candidates below 50"). Returns a candidate_table card with PendingAction. Requires human confirmation before any candidate status changes.',
+        inputSchema: proposeCandidateReviewInputSchema,
+        execute: async (input: z.infer<typeof proposeCandidateReviewInputSchema>) => {
+          const res = await executeProposeCandidateReview(input, conversationId);
+          toolMessage = res.message || res.error || 'I prepared candidate review, please confirm.';
+          if (res.card) {
+            parts.push({
+              type: 'card',
+              card: res.card as any,
+            });
+            await publishConversationEvent(conversationId, 'CHAT_PART', {
+              messageId: assistantMsgId.toString(),
+              partIndex: parts.length - 1,
+              part: {
+                type: 'card',
+                card: res.card as any,
+              },
+            });
+          }
+          return res;
+        },
+      }),
+
       confirm_action: tool({
         description:
           'Confirms and executes an active PendingAction. Use when the user says "yes", "confirm", "proceed", "do it", or approves an active proposed card.',
@@ -258,6 +301,7 @@ export class AgentService {
             stopWhen: [
               hasToolCall('parse_and_propose_job'),
               hasToolCall('request_candidate_sourcing'),
+              hasToolCall('propose_candidate_review'),
               hasToolCall('confirm_action'),
               hasToolCall('cancel_action'),
               isStepCount(3),

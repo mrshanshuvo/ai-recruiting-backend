@@ -7,6 +7,7 @@ import { healthRouter } from './routes/health.route';
 import { chatRouter } from './routes/chat.route';
 import { actionRouter } from './routes/action.route';
 import { jobRouter } from './routes/job.route';
+import { candidateRouter } from './routes/candidate.route';
 
 const app = express();
 
@@ -23,6 +24,7 @@ app.use(healthRouter);
 app.use('/api', chatRouter);
 app.use('/api', actionRouter);
 app.use('/api', jobRouter);
+app.use('/api', candidateRouter);
 
 // Fallback error handler
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

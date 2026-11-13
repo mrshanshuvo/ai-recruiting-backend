@@ -61,8 +61,10 @@ export async function executeGetJobStats(input: z.infer<typeof getJobStatsInputS
 
 export const findCandidatesInputSchema = z.object({
   jobId: z.string().optional().describe('Filter by job ID'),
-  status: z.string().optional().describe('Filter by candidate status'),
+  status: z.string().optional().describe('Filter by candidate status (e.g. Sourced, Accepted, Rejected)'),
   name: z.string().optional().describe('Filter by candidate name substring'),
+  minScore: z.number().optional().describe('Filter candidates with score >= minScore'),
+  limit: z.number().optional().describe('Maximum candidates to return (default: 20)'),
 });
 
 export async function executeFindCandidates(input: z.infer<typeof findCandidatesInputSchema>) {
@@ -71,19 +73,29 @@ export async function executeFindCandidates(input: z.infer<typeof findCandidates
   if (input.jobId) query.jobId = input.jobId;
   if (input.status) query.status = input.status;
   if (input.name) query.fullName = { $regex: input.name, $options: 'i' };
+  if (typeof input.minScore === 'number') {
+    query.score = { $gte: input.minScore };
+  }
 
-  const candidates = await Candidate.find(query).limit(20).lean();
+  const limit = input.limit || 20;
+  const candidates = await Candidate.find(query).sort({ score: -1 }).limit(limit).lean();
   return {
     success: true,
     count: candidates.length,
     candidates: candidates.map((c) => ({
       id: c._id.toString(),
+      candidateId: c._id.toString(),
       fullName: c.fullName,
-      email: c.email,
+      email: c.email || null,
+      emailStatus: c.emailStatus,
       status: c.status,
       score: c.score,
+      scoreReason: c.scoreReason,
+      sourceMode: c.sourceMode,
+      profileUrl: c.profileUrl,
       currentTitle: c.currentTitle,
       currentCompany: c.currentCompany,
+      skills: c.skills,
     })),
   };
 }

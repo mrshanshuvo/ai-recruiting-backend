@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 
-export type ActivityActor = 'recruiter' | 'agent' | 'worker' | 'system';
+export type ActivityActor = 'recruiter' | 'user' | 'agent' | 'worker' | 'system';
 
 export interface IActivityLog extends Document {
   _id: Types.ObjectId;
@@ -20,7 +20,7 @@ const ActivityLogSchema = new Schema<IActivityLog>(
     candidateId: { type: Schema.Types.ObjectId, ref: 'Candidate', required: false },
     actor: {
       type: String,
-      enum: ['recruiter', 'agent', 'worker', 'system'],
+      enum: ['recruiter', 'user', 'agent', 'worker', 'system'],
       required: true,
     },
     action: { type: String, required: true },
