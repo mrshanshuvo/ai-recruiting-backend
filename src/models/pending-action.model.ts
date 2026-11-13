@@ -64,8 +64,8 @@ const PendingActionSchema = new Schema<IPendingAction>(
   { timestamps: false }
 );
 
+// Indexes: conversationId + status for fast lookup, and expiresAt index for expiration checks (NO TTL index; documents are never auto-deleted)
 PendingActionSchema.index({ conversationId: 1, status: 1 });
-PendingActionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+PendingActionSchema.index({ expiresAt: 1 });
 
 export const PendingAction = mongoose.model<IPendingAction>('PendingAction', PendingActionSchema);
-

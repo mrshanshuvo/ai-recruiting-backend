@@ -5,6 +5,8 @@ import { connectDB } from './config/db';
 import { connectRedis } from './config/redis';
 import { healthRouter } from './routes/health.route';
 import { chatRouter } from './routes/chat.route';
+import { actionRouter } from './routes/action.route';
+import { jobRouter } from './routes/job.route';
 
 const app = express();
 
@@ -19,6 +21,8 @@ app.use(healthRouter);
 
 // API routes (/api)
 app.use('/api', chatRouter);
+app.use('/api', actionRouter);
+app.use('/api', jobRouter);
 
 // Fallback error handler
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -47,6 +51,9 @@ async function startServer(): Promise<void> {
   }
 }
 
-startServer();
+// Only start listening if not running in test mode
+if (process.env.NODE_ENV !== 'test') {
+  startServer();
+}
 
 export { app };

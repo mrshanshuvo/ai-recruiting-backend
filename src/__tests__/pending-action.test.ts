@@ -1,0 +1,227 @@
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import request from 'supertest';
+import mongoose from 'mongoose';
+import { app } from '../index.api';
+import { connectDB } from '../config/db';
+import { connectRedis, redisConnection } from '../config/redis';
+import { redisPublisher } from '../services/event-bus.service';
+import { Conversation, Job, PendingAction } from '../models';
+import { PendingActionService } from '../services/pending-action.service';
+
+describe('PendingAction Service & Confirmation Gate Tests', () => {
+  let conv1Id: string;
+  let conv2Id: string;
+
+  beforeAll(async () => {
+    await connectDB();
+    await connectRedis();
+
+    const c1 = await Conversation.create({ title: 'Test Conv 1' });
+    const c2 = await Conversation.create({ title: 'Test Conv 2' });
+    conv1Id = c1._id.toString();
+    conv2Id = c2._id.toString();
+  });
+
+  afterAll(async () => {
+    await Conversation.deleteMany({});
+    await Job.deleteMany({});
+    await PendingAction.deleteMany({});
+    await mongoose.connection.close();
+    redisConnection.disconnect();
+    redisPublisher.disconnect();
+  });
+
+  it('1. Confirm executes once even if called twice concurrently (atomic findOneAndUpdate)', async () => {
+    // Create an action
+    const action = await PendingActionService.createAction({
+      conversationId: conv1Id,
+      actionType: 'CREATE_JOB',
+      payload: {
+        title: 'Concurrent Senior Engineer',
+        mustHaveSkills: ['React', 'TypeScript'],
+        location: 'Remote',
+      },
+    });
+
+    const actionId = action._id.toString();
+
+    // Call confirm concurrently via Supertest
+    const [res1, res2] = await Promise.all([
+      request(app).post(`/api/actions/${actionId}/confirm`).send({}),
+      request(app).post(`/api/actions/${actionId}/confirm`).send({}),
+    ]);
+
+    const statuses = [res1.status, res2.status].sort();
+    // One must succeed with 200, one must fail with 422 (ACTION_ALREADY_EXECUTED)
+    expect(statuses).toEqual([200, 422]);
+
+    const successfulRes = res1.status === 200 ? res1 : res2;
+    const failedRes = res1.status === 422 ? res1 : res2;
+
+    expect(successfulRes.body.success).toBe(true);
+    expect(successfulRes.body.status).toBe('EXECUTED');
+    expect(failedRes.body.success).toBe(false);
+    expect(failedRes.body.error.code).toBe('ACTION_ALREADY_EXECUTED');
+
+    // Verify only ONE job was created in MongoDB
+    const jobs = await Job.find({ title: 'Concurrent Senior Engineer' });
+    expect(jobs.length).toBe(1);
+  });
+
+  it('2. Expired action cannot be confirmed (returns 422 and marks EXPIRED in code)', async () => {
+    // Create an action expired in the past
+    const expiredAction = await PendingActionService.createAction({
+      conversationId: conv1Id,
+      actionType: 'CREATE_JOB',
+      payload: {
+        title: 'Expired Role',
+        mustHaveSkills: ['Python'],
+      },
+      expiresAt: new Date(Date.now() - 1000 * 60), // 1 minute ago
+    });
+
+    const res = await request(app)
+      .post(`/api/actions/${expiredAction._id}/confirm`)
+      .send({});
+
+    expect(res.status).toBe(422);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error.code).toBe('ACTION_EXPIRED');
+
+    // Verify status in DB is now EXPIRED and NOT deleted
+    const doc = await PendingAction.findById(expiredAction._id);
+    expect(doc).not.toBeNull();
+    expect(doc?.status).toBe('EXPIRED');
+
+    // Verify NO job was created
+    const job = await Job.findOne({ title: 'Expired Role' });
+    expect(job).toBeNull();
+  });
+
+  it('3. Cancelled action cannot be confirmed (returns 422)', async () => {
+    const action = await PendingActionService.createAction({
+      conversationId: conv1Id,
+      actionType: 'CREATE_JOB',
+      payload: {
+        title: 'Cancelled Role',
+        mustHaveSkills: ['Go'],
+      },
+    });
+
+    // Cancel it first
+    const cancelRes = await request(app)
+      .post(`/api/actions/${action._id}/cancel`)
+      .send({ reason: 'Changed mind' });
+
+    expect(cancelRes.status).toBe(200);
+    expect(cancelRes.body.status).toBe('CANCELLED');
+
+    // Now try to confirm it
+    const confirmRes = await request(app)
+      .post(`/api/actions/${action._id}/confirm`)
+      .send({});
+
+    expect(confirmRes.status).toBe(422);
+    expect(confirmRes.body.error.code).toBe('ACTION_CANCELLED');
+
+    // Verify NO job was created
+    const job = await Job.findOne({ title: 'Cancelled Role' });
+    expect(job).toBeNull();
+  });
+
+  it('4. Action from another conversation cannot be confirmed through confirm_action (scoped by conversationId)', async () => {
+    const action = await PendingActionService.createAction({
+      conversationId: conv1Id, // belongs to conv1
+      actionType: 'CREATE_JOB',
+      payload: {
+        title: 'Cross Conversation Job',
+        mustHaveSkills: ['Rust'],
+      },
+    });
+
+    // Try to confirm providing conv2Id
+    await expect(
+      PendingActionService.confirmAction(action._id.toString(), conv2Id)
+    ).rejects.toThrow('Cannot confirm an action belonging to a different conversation');
+
+    // Verify action is still PENDING and no job created
+    const doc = await PendingAction.findById(action._id);
+    expect(doc?.status).toBe('PENDING');
+
+    const job = await Job.findOne({ title: 'Cross Conversation Job' });
+    expect(job).toBeNull();
+  });
+
+  it('5. editedPayload is used when present during confirmation', async () => {
+    const action = await PendingActionService.createAction({
+      conversationId: conv1Id,
+      actionType: 'CREATE_JOB',
+      payload: {
+        title: 'Original Title',
+        mustHaveSkills: ['Java'],
+        location: 'New York',
+      },
+    });
+
+    // Edit payload via PATCH /api/actions/:id/payload
+    const patchRes = await request(app)
+      .patch(`/api/actions/${action._id}/payload`)
+      .send({
+        editedPayload: {
+          title: 'Updated Senior Java Architect',
+          mustHaveSkills: ['Java', 'Spring Boot', 'Kafka'],
+          location: 'San Francisco, CA',
+        },
+      });
+
+    expect(patchRes.status).toBe(200);
+    expect(patchRes.body.status).toBe('PENDING');
+
+    // Confirm action
+    const confirmRes = await request(app)
+      .post(`/api/actions/${action._id}/confirm`)
+      .send({});
+
+    expect(confirmRes.status).toBe(200);
+    expect(confirmRes.body.status).toBe('EXECUTED');
+
+    // Verify job in database has EDITED values
+    const originalJob = await Job.findOne({ title: 'Original Title' });
+    expect(originalJob).toBeNull();
+
+    const editedJob = await Job.findOne({ title: 'Updated Senior Java Architect' });
+    expect(editedJob).not.toBeNull();
+    expect(editedJob?.mustHaveSkills).toEqual(['Java', 'Spring Boot', 'Kafka']);
+    expect(editedJob?.location).toBe('San Francisco, CA');
+  });
+
+  it('6. Invalid edited payload returns 422', async () => {
+    const action = await PendingActionService.createAction({
+      conversationId: conv1Id,
+      actionType: 'CREATE_JOB',
+      payload: {
+        title: 'Valid Job',
+        mustHaveSkills: ['React'],
+      },
+    });
+
+    // Send invalid payload (empty title)
+    const patchRes = await request(app)
+      .patch(`/api/actions/${action._id}/payload`)
+      .send({
+        editedPayload: {
+          title: '', // invalid: min length 1
+        },
+      });
+
+    expect(patchRes.status).toBe(422);
+    expect(patchRes.body.success).toBe(false);
+    expect(patchRes.body.error.code).toBe('VALIDATION_ERROR');
+
+    // Verify action still has original payload and remains PENDING
+    const doc = await PendingAction.findById(action._id);
+    expect(doc?.status).toBe('PENDING');
+    expect((doc?.payload as any).title).toBe('Valid Job');
+  });
+});
+

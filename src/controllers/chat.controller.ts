@@ -3,7 +3,8 @@ import mongoose from 'mongoose';
 import { z } from 'zod';
 import { env } from '../config/env';
 import { Conversation, Message } from '../models';
-import { createConversationSubscriber, publishConversationEvent } from '../services/event-bus.service';
+import { createConversationSubscriber } from '../services/event-bus.service';
+import { AgentService } from '../agent/agent.service';
 
 const sendMessageSchema = z.object({
   conversationId: z.string().refine((val) => mongoose.Types.ObjectId.isValid(val), {
@@ -166,26 +167,22 @@ export class ChatController {
         parts: [{ type: 'text', text }],
       });
 
-      // 2. Placeholder assistant reply for Checkpoint 2 (agent loop connected in Checkpoint 3)
-      const placeholderText = `I received your message: "${text}". Assistant loop will be active in Checkpoint 3.`;
-
-      const assistantMessage = await Message.create({
-        conversationId,
-        role: 'assistant',
-        parts: [{ type: 'text', text: placeholderText }],
-      });
-
-      // Stream placeholder assistant reply to SSE stream via Redis Pub/Sub
-      setTimeout(async () => {
-        await publishConversationEvent(conversationId, 'CHAT_PART', {
-          messageId: assistantMessage._id.toString(),
-          partIndex: 0,
-          part: {
-            type: 'text',
-            text: placeholderText,
+      // 2. Run agent turn asynchronously (or synchronous execution for clean error reporting)
+      // Check if GEMINI_API_KEY is present
+      if (!env.GEMINI_API_KEY) {
+        res.status(500).json({
+          success: false,
+          error: {
+            code: 'CONFIG_ERROR',
+            message:
+              'GEMINI_API_KEY is empty. Please set a valid Google Gemini API key in apps/backend/.env to run the AI agent.',
           },
         });
-      }, 50);
+        return;
+      }
+
+      // Execute AI turn
+      await AgentService.runTurn(conversationId, text);
 
       res.status(200).json({
         success: true,
@@ -193,15 +190,14 @@ export class ChatController {
         conversationId,
       });
     } catch (error) {
-      console.error('[ChatController.sendMessage]', error);
+      console.error('[ChatController.sendMessage Error]', error);
       res.status(500).json({
         success: false,
         error: {
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Failed to process message',
+          code: 'LLM_EXECUTION_ERROR',
+          message: error instanceof Error ? error.message : 'AI execution error',
         },
       });
     }
   }
 }
-
