@@ -9,6 +9,7 @@ export interface CsvUploadResult {
   totalRows: number;
   newCount: number;
   duplicateCount: number;
+  noEmailCount: number;
   enqueuedCount: number;
   message: string;
 }
@@ -105,6 +106,7 @@ export class CandidateService {
 
     let newCount = 0;
     let duplicateCount = 0;
+    let noEmailCount = 0;
     const candidatesToScore: string[] = [];
 
     const jobObjectId = new mongoose.Types.ObjectId(jobId);
@@ -198,6 +200,10 @@ export class CandidateService {
         status: 'Sourced',
       });
 
+      if (!email || !email.trim()) {
+        noEmailCount++;
+      }
+
       newCount++;
       candidatesToScore.push(newCand._id.toString());
     }
@@ -212,7 +218,7 @@ export class CandidateService {
     }
 
     const totalProcessed = newCount + duplicateCount;
-    const summaryMessage = `Imported ${totalProcessed} candidates from ${fileName} (${newCount} new, ${duplicateCount} skipped as duplicates). Scoring in progress.`;
+    const summaryMessage = `Processed ${totalProcessed} candidates from ${fileName}: ${newCount} new, ${duplicateCount} skipped as duplicates, ${noEmailCount} without email (kept, marked 'no email', cannot be contacted). Scoring in progress.`;
 
     // 5. Post summary message to conversation if conversationId was provided
     if (conversationId && mongoose.Types.ObjectId.isValid(conversationId)) {
@@ -233,8 +239,10 @@ export class CandidateService {
       totalRows: totalProcessed,
       newCount,
       duplicateCount,
+      noEmailCount,
       enqueuedCount: candidatesToScore.length,
       message: summaryMessage,
     };
   }
 }
+

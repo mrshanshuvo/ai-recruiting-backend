@@ -50,3 +50,4 @@ export function normalizeProfileUrl(rawUrl?: string | null): string | undefined 
     return trimmed.toLowerCase().replace(/\/+$/, '');
   }
 }
+

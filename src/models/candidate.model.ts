@@ -40,11 +40,11 @@ export interface ICandidate extends Document {
   scoreMissingInfo: string[];
   missingInfo: string[];
   status: CandidateStatus;
-  statusBeforeUnsubscribe: CandidateStatus | null;
+  statusBeforeUnsubscribe?: CandidateStatus;
   outreachStopped: boolean;
-  contactedAt: Date | null;
-  bookingToken: string | null;
-  meetingSlot: string | null;
+  contactedAt?: Date;
+  bookingToken?: string;
+  meetingSlot?: string;
   createdAt: Date;
   updatedAt: Date;
 }

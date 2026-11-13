@@ -1,0 +1,13 @@
+fullName,email,profileUrl,currentTitle,currentCompany,skills
+Sarah Chen,sarah.chen@example.com,https://linkedin.com/in/sarahchen-mock,Staff UI Engineer,CloudScale Inc,"React, TypeScript, Tailwind CSS, Vite, SSE"
+Alex Rivera,alex.rivera@example.com,https://linkedin.com/in/alexrivera-mock,Senior Frontend Developer,FinTech Labs,"React, JavaScript, Redux, CSS, HTML5"
+Elena Rostova,elena.rostova@example.com,https://linkedin.com/in/elenarostova-mock,Lead Frontend Architect,DataStream Systems,"React, TypeScript, GraphQL, Next.js, Node.js"
+Marcus Brody,marcus.brody@example.com,https://linkedin.com/in/marcusbrody-mock,Full Stack Engineer,BioHealth Corp,"React, Python, Django, Docker, PostgreSQL"
+Amina Yusuf,amina.yusuf@example.com,https://linkedin.com/in/aminayusuf-mock,Senior Software Engineer,NextGen Mobility,"TypeScript, React 18, Tailwind, Jest, CI/CD"
+Sarah Chen,sarah.chen@example.com,https://linkedin.com/in/sarahchen-alt-mock,Senior Frontend Engineer,CloudScale Inc,"React, TypeScript"
+Jordan Lee,,https://linkedin.com/in/jordanlee-mock,Frontend UI Developer,PixelCraft Studios,"React, JavaScript, CSS3, HTML5"
+Priya Patel,priya.patel@example.com,https://linkedin.com/in/priyapatel-mock,Lead React Engineer,SaaS Dynamics,"React 18, TypeScript, Redux Toolkit, Webpack"
+David Kim,david.kim@example.com,https://linkedin.com/in/alexrivera-mock,Senior Web Developer,NextWave Software,"Vue.js, JavaScript, Node.js"
+Tariq Al-Mansoor,tariq.almansoor@example.com,https://linkedin.com/in/tariqalmansoor-mock,Staff Frontend Developer,AlphaScale Technologies,"React, TypeScript, Server-Sent Events, Jest"
+Chloe Bennett,chloe.bennett@example.com,https://linkedin.com/in/chloebennett-mock,Senior UI/UX Engineer,DesignFirst Co,"React, TypeScript, Tailwind, Figma, Storybook"
+Lucas Silva,,https://linkedin.com/in/lucassilva-mock,Junior React Developer,StartUp Launchpad,"React, JavaScript, HTML, CSS"

@@ -35,6 +35,11 @@ Default models configured in `.env.example`:
 
 > **Note on Model Availability**: Google AI Studio provides varying model names across free and paid tiers. If `gemini-3.5-flash-lite` or `gemini-3.7-flash` are not enabled on your specific Google AI project, standard generally available equivalents such as `gemini-1.5-flash` or `gemini-2.0-flash` can be configured in `.env`.
 
+### Candidate Sourcing: Serper API vs. Fixture Mode
+The background sourcing worker supports dual discovery modes:
+1. **Live Serper Google Search**: Set `SERPER_API_KEY=your_key` in `.env`. The worker queries the Serper Google Search API using the Boolean search queries approved in the confirmation card, parses public LinkedIn candidate profiles, and marks them with `sourceMode: "serper"`.
+2. **Deterministic Fixture Fallback (Default)**: If `SERPER_API_KEY` is left blank or omitted, the worker automatically loads realistic candidate fixtures from `src/data/candidate-fixtures.json`. Candidates are marked with `sourceMode: "fixture"`, and the frontend displays a distinctive "demo data" badge. Evaluators can test full sourcing and scoring pipelines without a paid search API key.
+
 ## Health Check
 Verify API, MongoDB, and Redis connectivity:
 ```bash

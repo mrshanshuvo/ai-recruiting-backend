@@ -142,118 +142,153 @@ RULES:
   throw lastError;
 }
 
+export type ScoringFn = (
+  jobData: {
+    title: string;
+    mustHaveSkills?: string[];
+    niceToHaveSkills?: string[];
+    seniority?: string;
+    location?: string;
+    remotePolicy?: string;
+  },
+  candidateData: {
+    fullName: string;
+    currentTitle?: string;
+    currentCompany?: string;
+    skills?: string[];
+    summary?: string;
+  },
+  conversationId?: string
+) => Promise<{ score: number; reason: string; missingInfo: string[] }>;
+
+export async function processScoringJob(
+  payload: ScoringJobPayload,
+  scorer: ScoringFn = scoreCandidateWithLLM
+): Promise<void> {
+  const { jobId, candidateId, conversationId } = payload;
+  console.log(`[ScoringWorker] Scoring candidate ${candidateId} for job ${jobId}`);
+
+  const [dbJob, candidate] = await Promise.all([
+    Job.findById(jobId),
+    Candidate.findById(candidateId),
+  ]);
+
+  if (!dbJob || !candidate) {
+    console.warn(`[ScoringWorker] Missing job (${jobId}) or candidate (${candidateId}). Skipping.`);
+    return;
+  }
+
+  try {
+    const scoreResult = await scorer(
+      {
+        title: dbJob.title,
+        mustHaveSkills: dbJob.mustHaveSkills,
+        niceToHaveSkills: dbJob.niceToHaveSkills,
+        seniority: dbJob.seniority,
+        location: dbJob.location,
+        remotePolicy: dbJob.remotePolicy,
+      },
+      {
+        fullName: candidate.fullName,
+        currentTitle: candidate.currentTitle,
+        currentCompany: candidate.currentCompany,
+        skills: candidate.skills,
+        summary: candidate.scoreReason,
+      },
+      conversationId
+    );
+
+    candidate.score = scoreResult.score;
+    candidate.scoreReason = scoreResult.reason;
+    candidate.scoreMissingInfo = scoreResult.missingInfo;
+    candidate.missingInfo = scoreResult.missingInfo;
+    candidate.scoreStatus = 'scored';
+    await candidate.save();
+
+    console.log(`[ScoringWorker] Scored candidate '${candidate.fullName}': ${scoreResult.score}/100`);
+  } catch (err: any) {
+    console.error(`[ScoringWorker] Scoring failed for candidate '${candidate.fullName}':`, err?.message || err);
+    // Resilient failure handling per B4
+    candidate.scoreStatus = 'failed';
+    candidate.score = null;
+    candidate.scoreReason = `could not score: ${err instanceof Error ? err.message : String(err)}`;
+    candidate.scoreMissingInfo = ['scoring failed due to external provider error'];
+    candidate.missingInfo = ['scoring failed due to external provider error'];
+    await candidate.save();
+  }
+
+  // Check batch progress
+  const jobObjectId = new mongoose.Types.ObjectId(jobId);
+  const allCandidates = await Candidate.find({ jobId: jobObjectId });
+
+  const total = allCandidates.length;
+  const scored = allCandidates.filter((c) => c.scoreStatus === 'scored').length;
+  const failed = allCandidates.filter((c) => c.scoreStatus === 'failed').length;
+  const found = total;
+
+  // Emit SOURCING_PROGRESS event via Redis Pub/Sub to SSE
+  if (conversationId) {
+    await publishConversationEvent(conversationId, 'SOURCING_PROGRESS', {
+      jobId,
+      found,
+      scored,
+      failed,
+      total,
+    });
+  }
+
+  // If all candidates in batch are evaluated, post the final assistant summary message
+  if (scored + failed >= total && total > 0 && conversationId) {
+    const finalCandidates = await Candidate.find({ jobId: jobObjectId });
+    const strongMatches = finalCandidates.filter((c) => (c.score ?? 0) >= 80).length;
+    const moderateMatches = finalCandidates.filter((c) => (c.score ?? 0) >= 60 && (c.score ?? 0) < 80).length;
+    const weakMatches = finalCandidates.filter((c) => c.scoreStatus === 'failed' || (c.score ?? 0) < 60).length;
+
+    const strongLabel = strongMatches === 1 ? '1 strong match' : `${strongMatches} strong matches`;
+    const moderateLabel = moderateMatches === 1 ? '1 moderate match' : `${moderateMatches} moderate matches`;
+    const weakLabel = weakMatches === 1 ? '1 weak match' : `${weakMatches} weak matches`;
+
+    const summaryText = `Found and scored ${total} candidates for ${dbJob.title}: ${strongLabel} (score >= 80), ${moderateLabel} (60-79), ${weakLabel} (< 60). You can review them in the Candidates tab or ask me to show them here.`;
+
+    // Atomic lock in Redis to avoid concurrent workers posting duplicate summary
+    const lockKey = `summary_posted:${jobId}:${total}`;
+    const acquired = await redisConnection.set(lockKey, '1', 'EX', 300, 'NX');
+    if (!acquired) {
+      return;
+    }
+
+    // Double check DB to ensure idempotent posting
+    const existingSummary = await Message.findOne({
+      conversationId: new mongoose.Types.ObjectId(conversationId),
+      role: 'assistant',
+      'parts.text': { $regex: new RegExp(`Found and scored ${total} candidates for ${dbJob.title}`) },
+    });
+
+    if (!existingSummary) {
+      const summaryMsg = await Message.create({
+        conversationId: new mongoose.Types.ObjectId(conversationId),
+        role: 'assistant',
+        parts: [{ type: 'text', text: summaryText }],
+      });
+
+      await publishConversationEvent(conversationId, 'CHAT_PART', {
+        messageId: summaryMsg._id.toString(),
+        partIndex: 0,
+        part: { type: 'text', text: summaryText },
+      });
+
+      console.log(`[ScoringWorker] Posted sourcing summary to conversation ${conversationId}`);
+    }
+  }
+}
+
 export function createScoringWorker(): Worker {
   const workerConnection = redisConnection.duplicate();
 
   const worker = new Worker(
     SCORING_QUEUE_NAME,
     async (job: BullJob<ScoringJobPayload>) => {
-      const { jobId, candidateId, conversationId } = job.data;
-      console.log(`[ScoringWorker] Scoring candidate ${candidateId} for job ${jobId}`);
-
-      const [dbJob, candidate] = await Promise.all([
-        Job.findById(jobId),
-        Candidate.findById(candidateId),
-      ]);
-
-      if (!dbJob || !candidate) {
-        console.warn(`[ScoringWorker] Missing job (${jobId}) or candidate (${candidateId}). Skipping.`);
-        return;
-      }
-
-      try {
-        if (candidate.fullName.includes('ForcedFailure')) {
-          throw new Error('Simulated upstream LLM evaluation error');
-        }
-
-        const scoreResult = await scoreCandidateWithLLM(
-          {
-            title: dbJob.title,
-            mustHaveSkills: dbJob.mustHaveSkills,
-            niceToHaveSkills: dbJob.niceToHaveSkills,
-            seniority: dbJob.seniority,
-            location: dbJob.location,
-            remotePolicy: dbJob.remotePolicy,
-          },
-          {
-            fullName: candidate.fullName,
-            currentTitle: candidate.currentTitle,
-            currentCompany: candidate.currentCompany,
-            skills: candidate.skills,
-            summary: candidate.scoreReason,
-          },
-          conversationId
-        );
-
-        candidate.score = scoreResult.score;
-        candidate.scoreReason = scoreResult.reason;
-        candidate.scoreMissingInfo = scoreResult.missingInfo;
-        candidate.missingInfo = scoreResult.missingInfo;
-        candidate.scoreStatus = 'scored';
-        await candidate.save();
-
-        console.log(`[ScoringWorker] Scored candidate '${candidate.fullName}': ${scoreResult.score}/100`);
-      } catch (err: any) {
-        console.error(`[ScoringWorker] Scoring failed for candidate '${candidate.fullName}':`, err?.message || err);
-        // Resilient failure handling per B4
-        candidate.scoreStatus = 'failed';
-        candidate.score = null;
-        candidate.scoreReason = `could not score: ${err instanceof Error ? err.message : String(err)}`;
-        candidate.scoreMissingInfo = ['scoring failed due to external provider error'];
-        candidate.missingInfo = ['scoring failed due to external provider error'];
-        await candidate.save();
-      }
-
-      // Check batch progress
-      const jobObjectId = new mongoose.Types.ObjectId(jobId);
-      const allCandidates = await Candidate.find({ jobId: jobObjectId });
-
-      const total = allCandidates.length;
-      const scored = allCandidates.filter((c) => c.scoreStatus === 'scored').length;
-      const failed = allCandidates.filter((c) => c.scoreStatus === 'failed').length;
-      const found = total;
-
-      // Emit SOURCING_PROGRESS event via Redis Pub/Sub to SSE
-      await publishConversationEvent(conversationId, 'SOURCING_PROGRESS', {
-        jobId,
-        found,
-        scored,
-        failed,
-        total,
-      });
-
-      // If all candidates in batch are evaluated, post the final assistant summary message
-      if (scored + failed >= total && total > 0) {
-        const finalCandidates = await Candidate.find({ jobId: jobObjectId });
-        const strongMatches = finalCandidates.filter((c) => (c.score ?? 0) >= 80).length;
-        const moderateMatches = finalCandidates.filter((c) => (c.score ?? 0) >= 60 && (c.score ?? 0) < 80).length;
-        const weakMatches = finalCandidates.filter((c) => c.scoreStatus === 'failed' || (c.score ?? 0) < 60).length;
-
-        const summaryText = `Found and scored ${total} candidates for ${dbJob.title}: ${strongMatches} strong matches (score >= 80), ${moderateMatches} moderate matches (60-79), ${weakMatches} weak matches (< 60). You can review them in the Candidates tab or ask me to show them here.`;
-
-        // Check if summary was already posted to avoid duplicate summaries
-        const existingSummary = await Message.findOne({
-          conversationId: new mongoose.Types.ObjectId(conversationId),
-          role: 'assistant',
-          'parts.text': { $regex: new RegExp(`Found and scored ${total} candidates for ${dbJob.title}`) },
-        });
-
-        if (!existingSummary) {
-          const summaryMsg = await Message.create({
-            conversationId: new mongoose.Types.ObjectId(conversationId),
-            role: 'assistant',
-            parts: [{ type: 'text', text: summaryText }],
-          });
-
-          await publishConversationEvent(conversationId, 'CHAT_PART', {
-            messageId: summaryMsg._id.toString(),
-            partIndex: 0,
-            part: { type: 'text', text: summaryText },
-          });
-
-          console.log(`[ScoringWorker] Posted sourcing summary to conversation ${conversationId}`);
-        }
-      }
+      await processScoringJob(job.data, scoreCandidateWithLLM);
     },
     {
       connection: workerConnection,

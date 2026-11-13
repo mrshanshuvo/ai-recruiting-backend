@@ -1,43 +1,43 @@
 [
   {
-    "fullName": "Marcus Brody",
-    "email": "marcus.brody@example.com",
-    "profileUrl": "https://linkedin.com/in/marcusbrody-mock",
-    "currentTitle": "Senior Site Reliability Engineer",
-    "currentCompany": "CloudNative Systems",
-    "skills": ["Kubernetes", "Terraform", "Go", "Docker", "AWS", "Prometheus", "CI/CD"],
-    "location": "San Francisco, CA",
-    "summary": "8 years of DevOps and SRE experience managing large-scale Kubernetes clusters on AWS and GCP. Led incident management and observability initiatives."
-  },
-  {
-    "fullName": "Elena Rostova",
-    "email": "elena.rostova@example.com",
-    "profileUrl": "https://linkedin.com/in/elenarostova-mock",
-    "currentTitle": "Principal Infrastructure Architect",
-    "currentCompany": "DataStream Global",
-    "skills": ["Kubernetes", "Go", "Distributed Systems", "Kafka", "Linux", "Terraform"],
-    "location": "New York, NY",
-    "summary": "10+ years specializing in distributed systems, high availability site reliability, zero-downtime deployments, and infrastructure as code."
-  },
-  {
-    "fullName": "Devon Vance",
-    "email": "devon.vance@example.com",
-    "profileUrl": "https://linkedin.com/in/devonvance-mock",
-    "currentTitle": "Staff DevOps Engineer",
-    "currentCompany": "FinScale Tech",
-    "skills": ["Kubernetes", "Helm", "Terraform", "Prometheus", "Grafana", "Python", "Bash"],
-    "location": "Remote - US",
-    "summary": "Deep expertise building automated CI/CD pipelines, GitOps with ArgoCD, and infrastructure monitoring for fintech platforms."
-  },
-  {
     "fullName": "Sarah Chen",
     "email": "sarah.chen@example.com",
     "profileUrl": "https://linkedin.com/in/sarahchen-mock",
     "currentTitle": "Staff UI Engineer",
     "currentCompany": "CloudScale Inc",
-    "skills": ["React", "TypeScript", "Tailwind CSS", "Vite", "Server-Sent Events", "Jest"],
+    "skills": ["React 18", "TypeScript", "Tailwind CSS", "Vite", "Server-Sent Events", "Jest"],
     "location": "San Francisco, CA",
-    "summary": "Specialist in high performance frontend architectures, streaming user interfaces, and component design systems."
+    "summary": "7+ years architecting web frontends. Deep specialization in React 18, TypeScript, Tailwind CSS, real-time streaming with Server-Sent Events, and rigorous Jest test suites."
+  },
+  {
+    "fullName": "Tariq Al-Mansoor",
+    "email": "tariq.almansoor@example.com",
+    "profileUrl": "https://linkedin.com/in/tariqalmansoor-mock",
+    "currentTitle": "Staff Frontend Developer",
+    "currentCompany": "AlphaScale Technologies",
+    "skills": ["React", "TypeScript", "Server-Sent Events", "Jest", "Tailwind CSS", "Next.js"],
+    "location": "Remote - US",
+    "summary": "6 years building responsive, accessible web applications with React, TypeScript, Next.js, and streaming architectures over SSE. Lead developer on modern UI design systems."
+  },
+  {
+    "fullName": "Amina Yusuf",
+    "email": "amina.yusuf@example.com",
+    "profileUrl": "https://linkedin.com/in/aminayusuf-mock",
+    "currentTitle": "Senior Frontend Engineer",
+    "currentCompany": "NextGen Mobility",
+    "skills": ["TypeScript", "React 18", "Tailwind CSS", "WebSockets", "Jest", "CI/CD"],
+    "location": "San Francisco, CA",
+    "summary": "5 years of professional web development in React 18, TypeScript, Tailwind styling, WebSockets real-time feeds, and end-to-end testing with Jest and Cypress."
+  },
+  {
+    "fullName": "Priya Patel",
+    "email": "priya.patel@example.com",
+    "profileUrl": "https://linkedin.com/in/priyapatel-mock",
+    "currentTitle": "Lead React Engineer",
+    "currentCompany": "SaaS Dynamics",
+    "skills": ["React 18", "TypeScript", "Redux Toolkit", "Webpack", "CSS Modules"],
+    "location": "San Francisco, CA",
+    "summary": "6 years leading React frontend squads with TypeScript and Redux. Strong in CSS modules and component state, but less exposure to SSE and Tailwind."
   },
   {
     "fullName": "Alex Rivera",
@@ -45,79 +45,69 @@
     "profileUrl": "https://linkedin.com/in/alexrivera-mock",
     "currentTitle": "Senior Frontend Developer",
     "currentCompany": "FinTech Labs",
-    "skills": ["React", "JavaScript", "Redux", "Tailwind CSS", "HTML5", "CSS3"],
+    "skills": ["React", "JavaScript", "Redux", "CSS3", "HTML5"],
     "location": "Austin, TX",
-    "summary": "6 years building customer-facing single page applications in React and modern JavaScript with responsive UI."
-  },
-  {
-    "fullName": "Tariq Al-Mansoor",
-    "email": "tariq.almansoor@example.com",
-    "profileUrl": "https://linkedin.com/in/tariqalmansoor-mock",
-    "currentTitle": "Staff Backend Engineer",
-    "currentCompany": "AlphaScale Technologies",
-    "skills": ["Node.js", "TypeScript", "MongoDB", "Redis", "Distributed Systems", "Docker"],
-    "location": "Berlin, Germany",
-    "summary": "Backend specialist with 9 years scaling Node.js microservices, MongoDB replica sets, and BullMQ queue processing."
+    "summary": "5 years building customer-facing React single-page applications. Strong vanilla JavaScript and CSS, but primarily uses JavaScript rather than TypeScript."
   },
   {
     "fullName": "Chloe Bennett",
     "email": "chloe.bennett@example.com",
     "profileUrl": "https://linkedin.com/in/chloebennett-mock",
-    "currentTitle": "Senior Backend & Cloud Engineer",
+    "currentTitle": "Senior UI/UX Engineer",
     "currentCompany": "DesignFirst Co",
-    "skills": ["Go", "Kubernetes", "PostgreSQL", "Docker", "GCP", "REST APIs"],
-    "location": "Chicago, IL",
-    "summary": "Designs resilient backend services in Go, database schema migrations, and containerized deployments."
+    "skills": ["React", "TypeScript", "Tailwind CSS", "Figma", "Storybook"],
+    "location": "Remote - US",
+    "summary": "5 years designing and coding design systems in React and Tailwind. Excellent TypeScript and component architecture, but limited streaming (SSE) experience."
   },
   {
-    "fullName": "Priya Patel",
-    "email": "priya.patel@example.com",
-    "profileUrl": "https://linkedin.com/in/priyapatel-mock",
-    "currentTitle": "Lead DevOps & SRE Engineer",
-    "currentCompany": "SaaS Dynamics",
-    "skills": ["Kubernetes", "AWS", "Terraform", "Docker", "CI/CD", "Linux", "Datadog"],
-    "location": "Seattle, WA",
-    "summary": "7+ years managing AWS multi-region infrastructure, automating Terraform modules, and maintaining 99.99% uptime SLAs."
+    "fullName": "Elena Rostova",
+    "email": "elena.rostova@example.com",
+    "profileUrl": "https://linkedin.com/in/elenarostova-mock",
+    "currentTitle": "Lead Frontend Architect",
+    "currentCompany": "DataStream Systems",
+    "skills": ["React", "TypeScript", "GraphQL", "Next.js", "Node.js"],
+    "location": "New York, NY",
+    "summary": "8 years developing enterprise React and Next.js applications with GraphQL integrations. Strong TypeScript, though styling is mainly SCSS rather than Tailwind."
   },
   {
     "fullName": "Jordan Lee",
     "email": null,
     "profileUrl": "https://linkedin.com/in/jordanlee-mock",
-    "currentTitle": "DevOps & Cloud Engineer",
+    "currentTitle": "Frontend UI Developer",
     "currentCompany": "PixelCraft Studios",
-    "skills": ["Docker", "Kubernetes", "Linux", "Bash", "AWS", "GitHub Actions"],
+    "skills": ["React", "JavaScript", "CSS3", "HTML5", "Vite"],
     "location": "Denver, CO",
-    "summary": "Hands-on engineer maintaining Linux servers, container images, and GitHub Actions deployment workflows."
+    "summary": "3 years building responsive interfaces in React and HTML/CSS. Profile has no contact email listed publicly."
+  },
+  {
+    "fullName": "Marcus Brody",
+    "email": "marcus.brody@example.com",
+    "profileUrl": "https://linkedin.com/in/marcusbrody-mock",
+    "currentTitle": "Full Stack Engineer",
+    "currentCompany": "BioHealth Corp",
+    "skills": ["React", "Python", "Django", "PostgreSQL", "Docker"],
+    "location": "San Francisco, CA",
+    "summary": "Full stack engineer with 4 years splitting time between Python backend APIs and basic React frontends. Missing TypeScript and modern Tailwind/SSE tooling."
   },
   {
     "fullName": "Lucas Silva",
     "email": null,
     "profileUrl": "https://linkedin.com/in/lucassilva-mock",
-    "currentTitle": "Junior SRE & Systems Admin",
+    "currentTitle": "Junior React Developer",
     "currentCompany": "StartUp Launchpad",
-    "skills": ["Linux", "Docker", "Bash", "Python", "Networking"],
+    "skills": ["React", "JavaScript", "HTML", "CSS"],
     "location": "Boston, MA",
-    "summary": "2 years in Linux administration, basic Docker setups, and systems telemetry monitoring."
+    "summary": "1.5 years of junior web development experience with React and basic styling. Entry-level developer."
   },
   {
-    "fullName": "Amina Yusuf",
-    "email": "amina.yusuf@example.com",
-    "profileUrl": "https://linkedin.com/in/aminayusuf-mock",
-    "currentTitle": "Senior Software Engineer (Full Stack)",
-    "currentCompany": "NextGen Mobility",
-    "skills": ["TypeScript", "React", "Node.js", "Docker", "Jest", "Tailwind CSS"],
-    "location": "London, UK",
-    "summary": "Full stack engineer delivering React frontends and Node.js backend APIs with rigorous automated testing."
-  },
-  {
-    "fullName": "Carlos Mendez",
-    "email": "carlos.mendez@example.com",
-    "profileUrl": "https://linkedin.com/in/carlosmendez-mock",
-    "currentTitle": "Senior SRE / Infrastructure Engineer",
-    "currentCompany": "Vanguard Cloud",
-    "skills": ["Kubernetes", "Terraform", "Golang", "AWS", "Ansible", "Linux", "Prometheus"],
-    "location": "Remote - US & Canada",
-    "summary": "Experienced SRE dedicated to cluster reliability, incident post-mortems, and building self-healing infrastructure."
+    "fullName": "Devon Vance",
+    "email": "devon.vance@example.com",
+    "profileUrl": "https://linkedin.com/in/devonvance-mock",
+    "currentTitle": "Staff DevOps Engineer",
+    "currentCompany": "FinScale Tech",
+    "skills": ["Kubernetes", "Helm", "Terraform", "Prometheus", "Python", "Bash"],
+    "location": "Remote - US",
+    "summary": "Infrastructure and Kubernetes specialist. Focuses entirely on cloud infrastructure automation, CI/CD pipelines, and observability."
   },
   {
     "fullName": "Hannah Schmidt",
@@ -125,19 +115,29 @@
     "profileUrl": "https://linkedin.com/in/hannahschmidt-mock",
     "currentTitle": "Lead Site Reliability Engineer",
     "currentCompany": "FinCore Europe",
-    "skills": ["Kubernetes", "Go", "Terraform", "Kafka", "Grafana", "Docker", "Linux"],
+    "skills": ["Kubernetes", "Go", "Terraform", "Kafka", "Grafana", "Linux"],
     "location": "Munich, Germany",
-    "summary": "Leads SRE squad overseeing mission-critical financial messaging platforms with strict latency bounds."
+    "summary": "Backend infrastructure engineer managing low-latency message streaming with Kafka, Kubernetes, and Go."
   },
   {
-    "fullName": "Vikram Malhotra",
-    "email": "vikram.malhotra@example.com",
-    "profileUrl": "https://linkedin.com/in/vikrammalhotra-mock",
-    "currentTitle": "Senior Frontend Architect",
-    "currentCompany": "OmniCommerce",
-    "skills": ["React 18", "Next.js", "TypeScript", "GraphQL", "Tailwind CSS", "Cypress"],
-    "location": "Toronto, Canada",
-    "summary": "8 years building high-traffic eCommerce frontends with Next.js, server components, and GraphQL integrations."
+    "fullName": "Carlos Mendez",
+    "email": "carlos.mendez@example.com",
+    "profileUrl": "https://linkedin.com/in/carlosmendez-mock",
+    "currentTitle": "Senior SRE / Infrastructure Engineer",
+    "currentCompany": "Vanguard Cloud",
+    "skills": ["Kubernetes", "Terraform", "Golang", "AWS", "Linux"],
+    "location": "Remote - US",
+    "summary": "Senior SRE focused on AWS infrastructure, Terraform provisioning, and cluster reliability."
+  },
+  {
+    "fullName": "David Kim",
+    "email": "david.kim@example.com",
+    "profileUrl": "https://linkedin.com/in/davidkim-mock",
+    "currentTitle": "Senior Web Developer",
+    "currentCompany": "NextWave Software",
+    "skills": ["Vue.js", "JavaScript", "Node.js", "REST APIs"],
+    "location": "Seattle, WA",
+    "summary": "6 years specializing in Vue.js and Node.js microservices. Little React or TypeScript in primary production stack."
   },
   {
     "fullName": "Zoe Washington",
@@ -145,18 +145,8 @@
     "profileUrl": "https://linkedin.com/in/zoewashington-mock",
     "currentTitle": "Senior Distributed Systems Engineer",
     "currentCompany": "HyperGrid",
-    "skills": ["Go", "Distributed Systems", "Kubernetes", "gRPC", "MongoDB", "Redis"],
+    "skills": ["Go", "Distributed Systems", "Kubernetes", "gRPC", "MongoDB"],
     "location": "New York, NY",
-    "summary": "Builds high-throughput low-latency microservices with Go, gRPC, and event-driven architectures."
-  },
-  {
-    "fullName": "Liam O'Connor",
-    "email": "liam.oconnor@example.com",
-    "profileUrl": "https://linkedin.com/in/liamoconnor-mock",
-    "currentTitle": "Principal DevOps Engineer",
-    "currentCompany": "Enterprise Net",
-    "skills": ["Kubernetes", "AWS", "Terraform", "Python", "ArgoCD", "Vault", "Docker"],
-    "location": "Dublin, Ireland",
-    "summary": "Cloud security and DevOps veteran specializing in HashiCorp Vault, Zero-Trust network policies, and multi-cloud Kubernetes."
+    "summary": "Builds high-throughput backend microservices with Go, gRPC, and event-driven databases. Zero frontend focus."
   }
 ]

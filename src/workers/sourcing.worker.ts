@@ -215,3 +215,4 @@ export function createSourcingWorker(): Worker {
 
   return worker;
 }
+

@@ -4,6 +4,7 @@ import pLimit from 'p-limit';
 import { normalizeEmail, normalizeProfileUrl } from '../utils/normalizer';
 import { Candidate, Job } from '../models';
 import { CandidateService } from '../services/candidate.service';
+import { processScoringJob } from '../workers/scoring.worker';
 import { env } from '../config/env';
 
 describe('B8: Checkpoint 4 Sourcing Slice Unit & Integration Tests', () => {
@@ -276,29 +277,30 @@ Jordan Lee,,https://linkedin.com/in/jordanlee,Frontend Engineer`;
 
       const candidate = await Candidate.create({
         jobId: job._id,
-        fullName: 'Corrupted Candidate',
+        fullName: 'Isolated Error Candidate',
         emailStatus: 'missing',
         source: 'search',
         sourceMode: 'fixture',
+        scoreStatus: 'pending',
         status: 'Sourced',
       });
 
-      // Simulate resilient error catch handler from scoring.worker.ts
-      try {
-        throw new Error('400 Bad Request: unparseable profile structure');
-      } catch (err: any) {
-        candidate.scoreStatus = 'failed';
-        candidate.score = null;
-        candidate.scoreReason = `could not score: ${err.message}`;
-        candidate.scoreMissingInfo = ['scoring failed due to external provider error'];
-        candidate.missingInfo = ['scoring failed due to external provider error'];
-        await candidate.save();
-      }
+      // Call REAL processScoringJob with a failing scorer mock (dependency injection)
+      const failingScorer = vi.fn().mockRejectedValue(new Error('Simulated upstream LLM network failure'));
+
+      await processScoringJob(
+        {
+          jobId: job._id.toString(),
+          candidateId: candidate._id.toString(),
+          conversationId: '',
+        },
+        failingScorer
+      );
 
       const updated = await Candidate.findById(candidate._id);
       expect(updated!.scoreStatus).toBe('failed');
       expect(updated!.score).toBeNull();
-      expect(updated!.scoreReason).toContain('could not score: 400 Bad Request');
+      expect(updated!.scoreReason).toContain('could not score: Simulated upstream LLM network failure');
 
       await Candidate.findByIdAndDelete(candidate._id);
       await Job.findByIdAndDelete(job._id);
