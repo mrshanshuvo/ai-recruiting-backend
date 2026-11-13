@@ -159,15 +159,13 @@ Must-Have Requirements:
 
   console.log('\n--- Step 6: Simulate Inbound Candidate Reply from Zoe (Interested) ---');
   const simReplyText = "Hi! I am very interested in this Staff Distributed Systems Engineer role at Aironauts. Could you please send over a link to schedule a 15-minute introductory chat?";
-  console.log(`Sending simulated reply to POST /api/replies/simulate...`);
-  const replySimRes = await fetch(`${API_BASE}/api/replies/simulate`, {
+  console.log(`Sending simulated reply to POST /simulate-reply...`);
+  const replySimRes = await fetch(`${API_BASE}/simulate-reply`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       candidateId: zoe._id,
-      emailText: simReplyText,
-      conversationId,
-      sync: true, // Process synchronously for deterministic verification output
+      message: simReplyText,
     }),
   });
   const replySimData = await replySimRes.json();
@@ -230,34 +228,41 @@ Must-Have Requirements:
 
   console.log('\n--- Step 9: Test Additional Reply Classifications (Question & Unsubscribe) ---');
   console.log('1. Testing Question Reply for Hannah Schmidt:');
-  const hannahQuestionRes = await fetch(`${API_BASE}/api/replies/simulate`, {
+  const hannahQuestionRes = await fetch(`${API_BASE}/simulate-reply`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       candidateId: hannah._id,
-      emailText: 'What is the salary range and remote work flexibility for this position?',
-      sentiment: 'question',
-      sync: true,
+      message: 'What is the salary range and remote work flexibility for this position?',
     }),
   });
   const hannahQuestionData = await hannahQuestionRes.json();
-  const hannahReplied = await Candidate.findById(hannah._id);
-  console.log(`   Reply Class: "${hannahQuestionData.replyClass}" | Status in DB: "${hannahReplied?.status}" (Expected: Replied per DEC-01) | outreachStopped: ${hannahReplied?.outreachStopped}`);
+  // Poll until processed
+  let hannahReplied = null;
+  for (let i = 0; i < 20; i++) {
+    hannahReplied = await Candidate.findById(hannah._id);
+    if (hannahReplied?.status === 'Replied') break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  console.log(`   Reply Enqueued: "${hannahQuestionData.success}" | Status in DB: "${hannahReplied?.status}" (Expected: Replied per DEC-01) | outreachStopped: ${hannahReplied?.outreachStopped}`);
 
   console.log('2. Testing Unsubscribe Reply for Hannah Schmidt:');
-  const hannahUnsubRes = await fetch(`${API_BASE}/api/replies/simulate`, {
+  const hannahUnsubRes = await fetch(`${API_BASE}/simulate-reply`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       candidateId: hannah._id,
-      emailText: 'Please unsubscribe me and remove me from your list.',
-      sentiment: 'unsubscribe',
-      sync: true,
+      message: 'Please unsubscribe me and remove me from your list.',
     }),
   });
   const hannahUnsubData = await hannahUnsubRes.json();
-  const hannahUnsub = await Candidate.findById(hannah._id);
-  console.log(`   Reply Class: "${hannahUnsubData.replyClass}" | Status in DB: "${hannahUnsub?.status}" (Expected: Unsubscribed)`);
+  let hannahUnsub = null;
+  for (let i = 0; i < 20; i++) {
+    hannahUnsub = await Candidate.findById(hannah._id);
+    if (hannahUnsub?.status === 'Unsubscribed') break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  console.log(`   Reply Enqueued: "${hannahUnsubData.success}" | Status in DB: "${hannahUnsub?.status}" (Expected: Unsubscribed)`);
   console.log(`   statusBeforeUnsubscribe in DB: "${hannahUnsub?.statusBeforeUnsubscribe}" (Expected: Replied - preserved per DEC-03)`);
 
   console.log('\n--- Step 10: Progress Candidate Pipeline: Interviewed -> Shortlisted -> Hired ---');
@@ -310,3 +315,4 @@ main().catch((err) => {
   console.error('Fatal verification error:', err);
   process.exit(1);
 });
+

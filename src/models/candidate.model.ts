@@ -44,6 +44,7 @@ export interface ICandidate extends Document {
   outreachStopped: boolean;
   contactedAt?: Date;
   bookingToken?: string;
+  offeredSlots?: string[];
   meetingSlot?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -95,6 +96,7 @@ const CandidateSchema = new Schema<ICandidate>(
     outreachStopped: { type: Boolean, default: false },
     contactedAt: { type: Date, required: false },
     bookingToken: { type: String, required: false },
+    offeredSlots: { type: [String], default: [] },
     meetingSlot: { type: String, required: false },
   },
   { timestamps: true }

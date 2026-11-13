@@ -5,8 +5,7 @@ export type ReplyClass =
   | 'Not interested'
   | 'Question'
   | 'Wants a meeting'
-  | 'Unsubscribe'
-  | 'Out of office';
+  | 'Unsubscribe';
 
 export interface IReply extends Document {
   _id: Types.ObjectId;
@@ -30,7 +29,7 @@ const ReplySchema = new Schema<IReply>(
     body: { type: String, required: true },
     replyClass: {
       type: String,
-      enum: ['Interested', 'Not interested', 'Question', 'Wants a meeting', 'Unsubscribe', 'Out of office'],
+      enum: ['Interested', 'Not interested', 'Question', 'Wants a meeting', 'Unsubscribe'],
       required: true,
     },
     classificationReason: { type: String, required: false },

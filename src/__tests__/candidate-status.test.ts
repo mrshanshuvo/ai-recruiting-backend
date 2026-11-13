@@ -211,6 +211,69 @@ describe('Checkpoint 5: Candidate Status Machine, Review, and Confirmation Gate'
       const logCount = await ActivityLog.countDocuments({ candidateId: cand._id });
       expect(logCount).toBe(0);
     });
+
+    it('allows Unsubscribed from Replied once contacted (DEC-13)', async () => {
+      const cand = await createCandidate({ status: 'Replied', contactedAt: new Date() });
+      const res = await CandidateStatusService.transition(cand._id, 'Unsubscribed', 'system');
+      expect(res.newStatus).toBe('Unsubscribed');
+      const updated = await Candidate.findById(cand._id);
+      expect(updated?.statusBeforeUnsubscribe).toBe('Replied');
+    });
+
+    it('allows Unsubscribed from Interested once contacted (DEC-13)', async () => {
+      const cand = await createCandidate({ status: 'Interested', contactedAt: new Date() });
+      const res = await CandidateStatusService.transition(cand._id, 'Unsubscribed', 'system');
+      expect(res.newStatus).toBe('Unsubscribed');
+      const updated = await Candidate.findById(cand._id);
+      expect(updated?.statusBeforeUnsubscribe).toBe('Interested');
+    });
+
+    it('allows Unsubscribed from Not interested once contacted (DEC-13)', async () => {
+      const cand = await createCandidate({ status: 'Not interested', contactedAt: new Date() });
+      const res = await CandidateStatusService.transition(cand._id, 'Unsubscribed', 'system');
+      expect(res.newStatus).toBe('Unsubscribed');
+      const updated = await Candidate.findById(cand._id);
+      expect(updated?.statusBeforeUnsubscribe).toBe('Not interested');
+    });
+
+    it('allows Unsubscribed from Meeting booked once contacted (DEC-13)', async () => {
+      const cand = await createCandidate({ status: 'Meeting booked', contactedAt: new Date() });
+      const res = await CandidateStatusService.transition(cand._id, 'Unsubscribed', 'system');
+      expect(res.newStatus).toBe('Unsubscribed');
+      const updated = await Candidate.findById(cand._id);
+      expect(updated?.statusBeforeUnsubscribe).toBe('Meeting booked');
+    });
+
+    it('allows Unsubscribed from Interviewed once contacted (DEC-13)', async () => {
+      const cand = await createCandidate({ status: 'Interviewed', contactedAt: new Date() });
+      const res = await CandidateStatusService.transition(cand._id, 'Unsubscribed', 'system');
+      expect(res.newStatus).toBe('Unsubscribed');
+      const updated = await Candidate.findById(cand._id);
+      expect(updated?.statusBeforeUnsubscribe).toBe('Interviewed');
+    });
+
+    it('allows Unsubscribed from Shortlisted once contacted (DEC-13)', async () => {
+      const cand = await createCandidate({ status: 'Shortlisted', contactedAt: new Date() });
+      const res = await CandidateStatusService.transition(cand._id, 'Unsubscribed', 'system');
+      expect(res.newStatus).toBe('Unsubscribed');
+      const updated = await Candidate.findById(cand._id);
+      expect(updated?.statusBeforeUnsubscribe).toBe('Shortlisted');
+    });
+
+    it('allows Unsubscribed from Hired once contacted (DEC-13)', async () => {
+      const cand = await createCandidate({ status: 'Hired', contactedAt: new Date() });
+      const res = await CandidateStatusService.transition(cand._id, 'Unsubscribed', 'system');
+      expect(res.newStatus).toBe('Unsubscribed');
+      const updated = await Candidate.findById(cand._id);
+      expect(updated?.statusBeforeUnsubscribe).toBe('Hired');
+    });
+
+    it('rejects Unsubscribed from Accepted if candidate was never contacted', async () => {
+      const cand = await createCandidate({ status: 'Accepted' });
+      await expect(
+        CandidateStatusService.transition(cand._id, 'Unsubscribed', 'recruiter')
+      ).rejects.toThrow(InvalidStateTransitionError);
+    });
   });
 
   describe('3. Forbidden Transitions (422 INVALID_STATE_TRANSITION)', () => {

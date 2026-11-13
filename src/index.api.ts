@@ -8,7 +8,7 @@ import { chatRouter } from './routes/chat.route';
 import { actionRouter } from './routes/action.route';
 import { jobRouter } from './routes/job.route';
 import { candidateRouter } from './routes/candidate.route';
-import { replyRouter } from './routes/reply.route';
+import { replyRouter, handleSimulateReply } from './routes/reply.route';
 import { bookingRouter } from './routes/booking.route';
 
 const app = express();
@@ -22,8 +22,8 @@ app.use(express.json());
 // Health check endpoint (GET /health)
 app.use(healthRouter);
 
-// Root routes (e.g. POST /simulate-reply per DEC-15)
-app.use(replyRouter);
+// Root routes (POST /simulate-reply strictly per DEC-15)
+app.post('/simulate-reply', handleSimulateReply);
 
 // API routes (/api)
 app.use('/api', chatRouter);

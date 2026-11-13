@@ -14,8 +14,8 @@ export class InvalidStateTransitionError extends Error {
 export const ALLOWED_TRANSITIONS: Record<CandidateStatus, CandidateStatus[]> = {
   Sourced: ['Accepted', 'Rejected'],
   Accepted: ['Contacted', 'Rejected'],
-  Contacted: ['Replied', 'Interested', 'Not interested', 'Meeting booked', 'Unsubscribed'],
-  Replied: ['Interested', 'Not interested', 'Meeting booked', 'Replied', 'Unsubscribed'],
+  Contacted: ['Replied', 'Unsubscribed'],
+  Replied: ['Interested', 'Not interested', 'Unsubscribed'],
   Interested: ['Meeting booked', 'Rejected', 'Unsubscribed'],
   'Not interested': ['Rejected', 'Unsubscribed'],
   'Meeting booked': ['Interviewed', 'Rejected', 'Unsubscribed'],
@@ -119,7 +119,18 @@ export class CandidateStatusService {
       };
     }
 
-    // 3. Standard state machine guard checks
+    // 3. No-op check if already in target status
+    if (newStatus === currentStatus) {
+      return {
+        success: true,
+        candidateId: candidate._id.toString(),
+        previousStatus: currentStatus,
+        newStatus: currentStatus,
+        noOp: true,
+      };
+    }
+
+    // 4. Standard state machine guard checks
     const allowedTargets = ALLOWED_TRANSITIONS[currentStatus] || [];
     if (!allowedTargets.includes(newStatus)) {
       throw new InvalidStateTransitionError(

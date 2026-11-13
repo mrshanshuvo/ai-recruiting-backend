@@ -31,6 +31,7 @@ export type OutreachJobResultStatus =
   | 'SKIPPED_PAUSED'
   | 'SKIPPED_ALREADY_SENT'
   | 'SKIPPED_DAILY_LIMIT'
+  | 'RE_DELAYED_DAILY_LIMIT'
   | 'SKIPPED_NO_EMAIL';
 
 export interface OutreachJobResult {
@@ -39,6 +40,7 @@ export interface OutreachJobResult {
   sentAt?: string;
   previewUrl?: string;
   status: OutreachJobResultStatus;
+  delayUntil?: string;
 }
 
 export async function processOutreachJob(

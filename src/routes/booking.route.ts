@@ -4,6 +4,33 @@ import { Candidate, Job, ActivityLog } from '../models';
 
 export const bookingRouter = Router();
 
+// Config constant: Next 5 business days at 10:00, 14:00 and 16:00 UTC (DEC-19)
+export const BOOKING_SLOT_HOURS_UTC = ['10:00', '14:00', '16:00'] as const;
+export const BOOKING_BUSINESS_DAYS_COUNT = 5;
+
+export function generateUpcomingBusinessSlots(startDate: Date = new Date()): string[] {
+  const slots: string[] = [];
+  const cur = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate()));
+
+  let businessDaysFound = 0;
+  while (businessDaysFound < BOOKING_BUSINESS_DAYS_COUNT) {
+    cur.setUTCDate(cur.getUTCDate() + 1);
+    const dayOfWeek = cur.getUTCDay(); // 0 is Sunday, 6 is Saturday
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      businessDaysFound++;
+      const weekday = cur.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
+      const month = cur.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+      const day = cur.getUTCDate();
+      const year = cur.getUTCFullYear();
+
+      for (const timeStr of BOOKING_SLOT_HOURS_UTC) {
+        slots.push(`${weekday}, ${month} ${day}, ${year} at ${timeStr} UTC`);
+      }
+    }
+  }
+  return slots;
+}
+
 const selectSlotSchema = z.object({
   slot: z.string().min(1, 'Meeting slot selection is required'),
 });
@@ -31,24 +58,12 @@ bookingRouter.get('/booking/:token', async (req: Request, res: Response) => {
 
     const job = await Job.findById(candidate.jobId).lean();
 
-    // Generate mock upcoming slots
-    const now = new Date();
-    const day1 = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    const day2 = new Date(now.getTime() + 48 * 60 * 60 * 1000);
-    const day3 = new Date(now.getTime() + 72 * 60 * 60 * 1000);
+    // Generate upcoming slots dynamically from current date at request time
+    const slots = generateUpcomingBusinessSlots(new Date());
 
-    const formatDate = (d: Date, timeStr: string) => {
-      const datePart = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-      return `${datePart} at ${timeStr} (UTC)`;
-    };
-
-    const slots = [
-      formatDate(day1, '10:00 AM'),
-      formatDate(day1, '02:00 PM'),
-      formatDate(day2, '11:00 AM'),
-      formatDate(day2, '03:30 PM'),
-      formatDate(day3, '01:00 PM'),
-    ];
+    // Save offered slots on the candidate record
+    candidate.offeredSlots = slots;
+    await candidate.save();
 
     res.status(200).json({
       success: true,
@@ -104,7 +119,23 @@ bookingRouter.post('/booking/:token/slot', async (req: Request, res: Response) =
       return;
     }
 
-    // Save chosen slot
+    // DEC-19 / A2: Validate that chosen slot is among the offered slots
+    const offered = candidate.offeredSlots || [];
+    if (offered.length > 0 && !offered.includes(slot)) {
+      res.status(422).json({
+        success: false,
+        error: {
+          code: 'INVALID_SLOT_SELECTION',
+          message: `The slot "${slot}" was not offered. Please select one of the offered business slots.`,
+          offeredSlots: offered,
+        },
+      });
+      return;
+    }
+
+    const previousSlot = candidate.meetingSlot;
+
+    // Save chosen slot (second selection cleanly replaces first)
     candidate.meetingSlot = slot;
     await candidate.save();
 
@@ -119,6 +150,7 @@ bookingRouter.post('/booking/:token/slot', async (req: Request, res: Response) =
       details: {
         slot,
         bookingToken: token,
+        replacedPreviousSlot: previousSlot || null,
       },
       timestamp: new Date(),
     });
@@ -128,6 +160,7 @@ bookingRouter.post('/booking/:token/slot', async (req: Request, res: Response) =
       candidateId: candidate._id.toString(),
       fullName: candidate.fullName,
       meetingSlot: slot,
+      replacedPreviousSlot: previousSlot || null,
       message: `Meeting successfully scheduled for ${slot}!`,
     });
   } catch (error: any) {
@@ -135,3 +168,4 @@ bookingRouter.post('/booking/:token/slot', async (req: Request, res: Response) =
     res.status(500).json({ success: false, error: error.message });
   }
 });
+

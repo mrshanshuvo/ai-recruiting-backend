@@ -30,7 +30,7 @@ Copy `.env.example` to `.env` and set your `GEMINI_API_KEY`:
 cp .env.example .env
 ```
 Default models configured in `.env.example`:
-- `LLM_MODEL=gemini-3.5-flash-lite` (Fast, optimized for chat streaming and structured JSON extraction under standard API quotas)
+- `LLM_MODEL=gemini-3.1-flash-lite` (Fast, optimized for chat streaming and structured JSON extraction under standard API quotas)
 - `LLM_FALLBACK_MODEL=gemini-3.7-flash` (Used for automatic fallback retry if primary encounters 429/503 errors)
 
 > **Note on Model Availability**: Google AI Studio provides varying model names across free and paid tiers. If `gemini-3.5-flash-lite` or `gemini-3.7-flash` are not enabled on your specific Google AI project, standard generally available equivalents such as `gemini-1.5-flash` or `gemini-2.0-flash` can be configured in `.env`.
@@ -51,6 +51,14 @@ From posting the raw seed JD to receiving the first delivered outreach email wit
 The background sourcing worker supports dual discovery modes:
 1. **Live Serper Google Search**: Set `SERPER_API_KEY=your_key` in `.env`. The worker queries the Serper Google Search API using the Boolean search queries approved in the confirmation card, parses public LinkedIn candidate profiles, and marks them with `sourceMode: "serper"`.
 2. **Deterministic Fixture Fallback (Default)**: If `SERPER_API_KEY` is left blank or omitted, the worker automatically loads realistic candidate fixtures from `src/data/candidate-fixtures.json`. Candidates are marked with `sourceMode: "fixture"`, and the frontend displays a distinctive "demo data" badge. Evaluators can test full sourcing and scoring pipelines without a paid search API key.
+
+## Trade-offs
+
+### Personalization Strategy: Template Generation + Grounded Openings vs. Full LLM Email Generation
+The outreach engine pairs AI-crafted campaign templates with code-governed, strictly grounded personal openings rather than generating 100% bespoke emails per candidate:
+1. **Zero Hallucination Safety**: Grounding the candidate's personal opening (1–2 sentences) strictly in verified stored candidate data (`currentTitle`, `currentCompany`, `skills`, `snippet`) guarantees that the AI never invents projects, talks, articles, unverified employers, or fictitious years of experience. When stored candidate data is thin, no personal claim is fabricated and the email falls back safely to the clean template.
+2. **Predictable Recruiter Review**: The recruiter reviews and edits the core campaign sequence (Day 0, Day 3, Day 7) once in the campaign preview card, rather than having to read and verify 50–100 completely disparate full email bodies.
+3. **Latency & Token Efficiency**: Single-pass template generation with candidate opening extraction dramatically reduces API calls and avoids exhausting rolling RPM quotas during candidate outreach proposals.
 
 ## Health Check
 Verify API, MongoDB, and Redis connectivity:

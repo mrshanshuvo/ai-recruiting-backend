@@ -35,7 +35,7 @@ const scoringSchema = z.object({
 // Shared worker LLM concurrency limiter per ADR-0013 and Decision DEC-11
 const llmLimiter = pLimit(env.WORKER_LLM_MAX_CONCURRENCY);
 
-async function scoreCandidateWithLLM(
+export async function scoreCandidateWithLLM(
   jobData: {
     title: string;
     mustHaveSkills?: string[];

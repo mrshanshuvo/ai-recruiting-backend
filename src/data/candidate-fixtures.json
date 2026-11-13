@@ -1,152 +1,102 @@
 [
   {
-    "fullName": "Sarah Chen",
-    "email": "sarah.chen@example.com",
-    "profileUrl": "https://linkedin.com/in/sarahchen-mock",
-    "currentTitle": "Staff UI Engineer",
-    "currentCompany": "CloudScale Inc",
-    "skills": ["React 18", "TypeScript", "Tailwind CSS", "Vite", "Server-Sent Events", "Jest"],
+    "fullName": "Liam Vance",
+    "email": "liam.vance@example.com",
+    "profileUrl": "https://linkedin.com/in/liamvance-mock",
+    "currentTitle": "Staff Frontend Architect",
+    "currentCompany": "Acme Cloud Systems",
+    "skills": ["React 18", "TypeScript", "Tailwind CSS", "Server-Sent Events", "Jest"],
     "location": "San Francisco, CA",
     "summary": "7+ years architecting web frontends. Deep specialization in React 18, TypeScript, Tailwind CSS, real-time streaming with Server-Sent Events, and rigorous Jest test suites."
   },
   {
-    "fullName": "Tariq Al-Mansoor",
-    "email": "tariq.almansoor@example.com",
-    "profileUrl": "https://linkedin.com/in/tariqalmansoor-mock",
-    "currentTitle": "Staff Frontend Developer",
-    "currentCompany": "AlphaScale Technologies",
-    "skills": ["React", "TypeScript", "Server-Sent Events", "Jest", "Tailwind CSS", "Next.js"],
+    "fullName": "Maya Sterling",
+    "email": "maya.sterling@example.com",
+    "profileUrl": "https://linkedin.com/in/mayasterling-mock",
+    "currentTitle": "Senior React Developer",
+    "currentCompany": "Nimbus Web Labs",
+    "skills": ["React 18", "TypeScript", "Tailwind CSS", "WebSockets", "Vite"],
     "location": "Remote - US",
-    "summary": "6 years building responsive, accessible web applications with React, TypeScript, Next.js, and streaming architectures over SSE. Lead developer on modern UI design systems."
+    "summary": "5+ years building responsive, accessible web applications with React 18, TypeScript, Tailwind CSS, and WebSockets. Proven track record of high-performance streaming architectures."
   },
   {
-    "fullName": "Amina Yusuf",
-    "email": "amina.yusuf@example.com",
-    "profileUrl": "https://linkedin.com/in/aminayusuf-mock",
-    "currentTitle": "Senior Frontend Engineer",
-    "currentCompany": "NextGen Mobility",
-    "skills": ["TypeScript", "React 18", "Tailwind CSS", "WebSockets", "Jest", "CI/CD"],
+    "fullName": "Carlos Santana",
+    "email": "carlos.santana@example.com",
+    "profileUrl": "https://linkedin.com/in/carlossantana-mock",
+    "currentTitle": "Lead UI Engineer",
+    "currentCompany": "Apex Digital Solutions",
+    "skills": ["React", "TypeScript", "GraphQL", "Next.js", "Jest"],
     "location": "San Francisco, CA",
-    "summary": "5 years of professional web development in React 18, TypeScript, Tailwind styling, WebSockets real-time feeds, and end-to-end testing with Jest and Cypress."
-  },
-  {
-    "fullName": "Priya Patel",
-    "email": "priya.patel@example.com",
-    "profileUrl": "https://linkedin.com/in/priyapatel-mock",
-    "currentTitle": "Lead React Engineer",
-    "currentCompany": "SaaS Dynamics",
-    "skills": ["React 18", "TypeScript", "Redux Toolkit", "Webpack", "CSS Modules"],
-    "location": "San Francisco, CA",
-    "summary": "6 years leading React frontend squads with TypeScript and Redux. Strong in CSS modules and component state, but less exposure to SSE and Tailwind."
-  },
-  {
-    "fullName": "Alex Rivera",
-    "email": "alex.rivera@example.com",
-    "profileUrl": "https://linkedin.com/in/alexrivera-mock",
-    "currentTitle": "Senior Frontend Developer",
-    "currentCompany": "FinTech Labs",
-    "skills": ["React", "JavaScript", "Redux", "CSS3", "HTML5"],
-    "location": "Austin, TX",
-    "summary": "5 years building customer-facing React single-page applications. Strong vanilla JavaScript and CSS, but primarily uses JavaScript rather than TypeScript."
-  },
-  {
-    "fullName": "Chloe Bennett",
-    "email": "chloe.bennett@example.com",
-    "profileUrl": "https://linkedin.com/in/chloebennett-mock",
-    "currentTitle": "Senior UI/UX Engineer",
-    "currentCompany": "DesignFirst Co",
-    "skills": ["React", "TypeScript", "Tailwind CSS", "Figma", "Storybook"],
-    "location": "Remote - US",
-    "summary": "5 years designing and coding design systems in React and Tailwind. Excellent TypeScript and component architecture, but limited streaming (SSE) experience."
-  },
-  {
-    "fullName": "Elena Rostova",
-    "email": "elena.rostova@example.com",
-    "profileUrl": "https://linkedin.com/in/elenarostova-mock",
-    "currentTitle": "Lead Frontend Architect",
-    "currentCompany": "DataStream Systems",
-    "skills": ["React", "TypeScript", "GraphQL", "Next.js", "Node.js"],
-    "location": "New York, NY",
-    "summary": "8 years developing enterprise React and Next.js applications with GraphQL integrations. Strong TypeScript, though styling is mainly SCSS rather than Tailwind."
-  },
-  {
-    "fullName": "Jordan Lee",
-    "email": null,
-    "profileUrl": "https://linkedin.com/in/jordanlee-mock",
-    "currentTitle": "Frontend UI Developer",
-    "currentCompany": "PixelCraft Studios",
-    "skills": ["React", "JavaScript", "CSS3", "HTML5", "Vite"],
-    "location": "Denver, CO",
-    "summary": "3 years building responsive interfaces in React and HTML/CSS. Profile has no contact email listed publicly."
-  },
-  {
-    "fullName": "Marcus Brody",
-    "email": "marcus.brody@example.com",
-    "profileUrl": "https://linkedin.com/in/marcusbrody-mock",
-    "currentTitle": "Full Stack Engineer",
-    "currentCompany": "BioHealth Corp",
-    "skills": ["React", "Python", "Django", "PostgreSQL", "Docker"],
-    "location": "San Francisco, CA",
-    "summary": "Full stack engineer with 4 years splitting time between Python backend APIs and basic React frontends. Missing TypeScript and modern Tailwind/SSE tooling."
-  },
-  {
-    "fullName": "Lucas Silva",
-    "email": null,
-    "profileUrl": "https://linkedin.com/in/lucassilva-mock",
-    "currentTitle": "Junior React Developer",
-    "currentCompany": "StartUp Launchpad",
-    "skills": ["React", "JavaScript", "HTML", "CSS"],
-    "location": "Boston, MA",
-    "summary": "1.5 years of junior web development experience with React and basic styling. Entry-level developer."
-  },
-  {
-    "fullName": "Devon Vance",
-    "email": "devon.vance@example.com",
-    "profileUrl": "https://linkedin.com/in/devonvance-mock",
-    "currentTitle": "Staff DevOps Engineer",
-    "currentCompany": "FinScale Tech",
-    "skills": ["Kubernetes", "Helm", "Terraform", "Prometheus", "Python", "Bash"],
-    "location": "Remote - US",
-    "summary": "Infrastructure and Kubernetes specialist. Focuses entirely on cloud infrastructure automation, CI/CD pipelines, and observability."
-  },
-  {
-    "fullName": "Hannah Schmidt",
-    "email": "hannah.schmidt@example.com",
-    "profileUrl": "https://linkedin.com/in/hannahschmidt-mock",
-    "currentTitle": "Lead Site Reliability Engineer",
-    "currentCompany": "FinCore Europe",
-    "skills": ["Kubernetes", "Go", "Terraform", "Kafka", "Grafana", "Linux"],
-    "location": "Munich, Germany",
-    "summary": "Backend infrastructure engineer managing low-latency message streaming with Kafka, Kubernetes, and Go."
-  },
-  {
-    "fullName": "Carlos Mendez",
-    "email": "carlos.mendez@example.com",
-    "profileUrl": "https://linkedin.com/in/carlosmendez-mock",
-    "currentTitle": "Senior SRE / Infrastructure Engineer",
-    "currentCompany": "Vanguard Cloud",
-    "skills": ["Kubernetes", "Terraform", "Golang", "AWS", "Linux"],
-    "location": "Remote - US",
-    "summary": "Senior SRE focused on AWS infrastructure, Terraform provisioning, and cluster reliability."
-  },
-  {
-    "fullName": "David Kim",
-    "email": "david.kim@example.com",
-    "profileUrl": "https://linkedin.com/in/davidkim-mock",
-    "currentTitle": "Senior Web Developer",
-    "currentCompany": "NextWave Software",
-    "skills": ["Vue.js", "JavaScript", "Node.js", "REST APIs"],
-    "location": "Seattle, WA",
-    "summary": "6 years specializing in Vue.js and Node.js microservices. Little React or TypeScript in primary production stack."
+    "summary": "6 years building enterprise web apps with React, TypeScript, Next.js, and GraphQL. Strong testing experience with Jest, but limited Tailwind exposure."
   },
   {
     "fullName": "Zoe Washington",
     "email": "zoe.washington@example.com",
     "profileUrl": "https://linkedin.com/in/zoewashington-mock",
-    "currentTitle": "Senior Distributed Systems Engineer",
-    "currentCompany": "HyperGrid",
-    "skills": ["Go", "Distributed Systems", "Kubernetes", "gRPC", "MongoDB"],
-    "location": "New York, NY",
-    "summary": "Builds high-throughput backend microservices with Go, gRPC, and event-driven databases. Zero frontend focus."
+    "currentTitle": "Senior Web Engineer",
+    "currentCompany": "Beacon Software Works",
+    "skills": ["React", "TypeScript", "Redux", "CSS Modules", "CI/CD"],
+    "location": "Austin, TX",
+    "summary": "5 years building customer-facing React single-page applications. Strong TypeScript and Redux, but uses CSS Modules rather than Tailwind CSS."
+  },
+  {
+    "fullName": "Ethan Hunt",
+    "email": "ethan.hunt@example.com",
+    "profileUrl": "https://linkedin.com/in/ethanhunt-mock",
+    "currentTitle": "Frontend Platform Engineer",
+    "currentCompany": "Vanguard Tech Studios",
+    "skills": ["React 18", "TypeScript", "Vite", "Server-Sent Events", "Tailwind CSS"],
+    "location": "San Francisco, CA",
+    "summary": "5 years focused on web performance, Vite build tooling, and streaming UI with Server-Sent Events in React 18 and Tailwind CSS."
+  },
+  {
+    "fullName": "Fiona Gallagher",
+    "email": "fiona.gallagher@example.com",
+    "profileUrl": "https://linkedin.com/in/fionagallagher-mock",
+    "currentTitle": "Senior UI Developer",
+    "currentCompany": "Kestrel Apps Ltd",
+    "skills": ["React", "JavaScript", "Tailwind CSS", "HTML5", "CSS3"],
+    "location": "Remote - US",
+    "summary": "5 years designing and coding design systems in React and Tailwind. Excellent component architecture and CSS, but primarily JavaScript with limited TypeScript."
+  },
+  {
+    "fullName": "Noah Ramirez",
+    "email": "noah.ramirez@example.com",
+    "profileUrl": "https://linkedin.com/in/noahramirez-mock",
+    "currentTitle": "Full Stack Frontend Specialist",
+    "currentCompany": "Oasis Interactive",
+    "skills": ["React", "Python", "Node.js", "Docker", "PostgreSQL"],
+    "location": "Denver, CO",
+    "summary": "Full stack engineer with 4 years splitting time between Python backend APIs and basic React frontends. Missing modern TypeScript and SSE streaming tooling."
+  },
+  {
+    "fullName": "Olivia Bennett",
+    "email": "olivia.bennett@example.com",
+    "profileUrl": "https://linkedin.com/in/oliviabennett-mock",
+    "currentTitle": "UI Components Developer",
+    "currentCompany": "Vertex Digital Hub",
+    "skills": ["React", "TypeScript", "Storybook", "Figma", "HTML5"],
+    "location": "Seattle, WA",
+    "summary": "3 years crafting UI component libraries in React with TypeScript and Storybook. Design-system oriented, but lacking streaming and integration testing."
+  },
+  {
+    "fullName": "Kevin Zhang",
+    "email": "kevin.zhang@example.com",
+    "profileUrl": "https://linkedin.com/in/kevinzhang-mock",
+    "currentTitle": "Junior Frontend Engineer",
+    "currentCompany": "Helios Dynamics",
+    "skills": ["React", "JavaScript", "HTML", "CSS"],
+    "location": "Boston, MA",
+    "summary": "1.5 years of junior web development experience with React and basic styling. Entry-level developer."
+  },
+  {
+    "fullName": "Hannah Abbott",
+    "email": null,
+    "profileUrl": "https://linkedin.com/in/hannahabbott-mock",
+    "currentTitle": "Web Interface Developer",
+    "currentCompany": "Zephyr Systems Inc",
+    "skills": ["React", "TypeScript", "Tailwind CSS"],
+    "location": "Chicago, IL",
+    "summary": "4 years developing clean web interfaces in React and Tailwind CSS. Public profile does not list an email address."
   }
 ]

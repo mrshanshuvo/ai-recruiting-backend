@@ -99,109 +99,113 @@ function loadFixtures(job: any, targetCount: number): RawCandidateProfile[] {
   return scored.slice(0, targetCount).map((s) => s.candidate);
 }
 
+export async function processSourcingPayload(data: SourcingJobPayload): Promise<{ found: number; enqueued: number; sourceMode: string }> {
+  const { jobId, conversationId, targetCount, searchQueries } = data;
+  console.log(`[SourcingWorker] Processing sourcing request for job ${jobId} (target: ${targetCount})`);
+
+  const dbJob = await Job.findById(jobId);
+  if (!dbJob) {
+    throw new Error(`Job not found: ${jobId}`);
+  }
+
+  let rawProfiles: RawCandidateProfile[] = [];
+  let sourceMode: 'serper' | 'fixture' = 'fixture';
+
+  if (env.SERPER_API_KEY && env.SERPER_API_KEY.trim()) {
+    sourceMode = 'serper';
+    rawProfiles = await searchSerper(searchQueries, targetCount);
+  } else {
+    sourceMode = 'fixture';
+    rawProfiles = loadFixtures(dbJob, targetCount);
+  }
+
+  console.log(`[SourcingWorker] Discovered ${rawProfiles.length} candidate profiles in '${sourceMode}' mode.`);
+
+  const candidateIdsToScore: string[] = [];
+  const jobObjectId = new mongoose.Types.ObjectId(jobId);
+
+  for (const profile of rawProfiles) {
+    const normEmail = normalizeEmail(profile.email);
+    const normUrl = normalizeProfileUrl(profile.profileUrl);
+
+    // Deduplication check per ADR-0007 / Decision DEC-07
+    const orConditions: any[] = [];
+    if (normEmail) orConditions.push({ normalizedEmail: normEmail });
+    if (normUrl) orConditions.push({ normalizedProfileUrl: normUrl });
+
+    let existingCandidate = null;
+    if (orConditions.length > 0) {
+      existingCandidate = await Candidate.findOne({
+        jobId: jobObjectId,
+        $or: orConditions,
+      });
+    }
+
+    if (existingCandidate) {
+      console.log(`[SourcingWorker] Deduplicated: Candidate '${existingCandidate.fullName}' already exists for job.`);
+      // Do not re-enqueue for scoring if already scored for this job
+      if (existingCandidate.scoreStatus === 'pending') {
+        candidateIdsToScore.push(existingCandidate._id.toString());
+      }
+      continue;
+    }
+
+    // Insert new candidate with explicit sourceMode & emailStatus
+    const newCandidate = await Candidate.create({
+      jobId: jobObjectId,
+      fullName: profile.fullName,
+      email: profile.email || undefined,
+      normalizedEmail: normEmail,
+      emailStatus: profile.email ? 'valid' : 'missing',
+      profileUrl: profile.profileUrl || undefined,
+      normalizedProfileUrl: normUrl,
+      source: 'search',
+      sourceMode,
+      currentTitle: profile.currentTitle,
+      currentCompany: profile.currentCompany,
+      skills: profile.skills || [],
+      score: null,
+      scoreStatus: 'pending',
+      scoreMissingInfo: [],
+      missingInfo: [],
+      status: 'Sourced',
+      scoreReason: profile.summary,
+    });
+
+    candidateIdsToScore.push(newCandidate._id.toString());
+  }
+
+  // Enqueue candidates to scoring-queue
+  for (const candidateId of candidateIdsToScore) {
+    await scoringQueue.add('score_candidate', {
+      jobId,
+      candidateId,
+      conversationId,
+    });
+  }
+
+  const totalDiscovered = await Candidate.countDocuments({ jobId: jobObjectId });
+
+  // Emit initial SOURCING_PROGRESS event
+  await publishConversationEvent(conversationId, 'SOURCING_PROGRESS', {
+    jobId,
+    found: totalDiscovered,
+    scored: 0,
+    failed: 0,
+    total: totalDiscovered,
+  });
+
+  console.log(`[SourcingWorker] Enqueued ${candidateIdsToScore.length} candidates for scoring.`);
+  return { found: totalDiscovered, enqueued: candidateIdsToScore.length, sourceMode };
+}
+
 export function createSourcingWorker(): Worker {
   const workerConnection = redisConnection.duplicate();
 
   const worker = new Worker(
     SOURCING_QUEUE_NAME,
     async (job: BullJob<SourcingJobPayload>) => {
-      const { jobId, conversationId, targetCount, searchQueries } = job.data;
-      console.log(`[SourcingWorker] Processing sourcing request for job ${jobId} (target: ${targetCount})`);
-
-      const dbJob = await Job.findById(jobId);
-      if (!dbJob) {
-        throw new Error(`Job not found: ${jobId}`);
-      }
-
-      let rawProfiles: RawCandidateProfile[] = [];
-      let sourceMode: 'serper' | 'fixture' = 'fixture';
-
-      if (env.SERPER_API_KEY && env.SERPER_API_KEY.trim()) {
-        sourceMode = 'serper';
-        rawProfiles = await searchSerper(searchQueries, targetCount);
-      } else {
-        sourceMode = 'fixture';
-        rawProfiles = loadFixtures(dbJob, targetCount);
-      }
-
-      console.log(`[SourcingWorker] Discovered ${rawProfiles.length} candidate profiles in '${sourceMode}' mode.`);
-
-      const candidateIdsToScore: string[] = [];
-      const jobObjectId = new mongoose.Types.ObjectId(jobId);
-
-      for (const profile of rawProfiles) {
-        const normEmail = normalizeEmail(profile.email);
-        const normUrl = normalizeProfileUrl(profile.profileUrl);
-
-        // Deduplication check per ADR-0007 / Decision DEC-07
-        const orConditions: any[] = [];
-        if (normEmail) orConditions.push({ normalizedEmail: normEmail });
-        if (normUrl) orConditions.push({ normalizedProfileUrl: normUrl });
-
-        let existingCandidate = null;
-        if (orConditions.length > 0) {
-          existingCandidate = await Candidate.findOne({
-            jobId: jobObjectId,
-            $or: orConditions,
-          });
-        }
-
-        if (existingCandidate) {
-          console.log(`[SourcingWorker] Deduplicated: Candidate '${existingCandidate.fullName}' already exists for job.`);
-          // Do not re-enqueue for scoring if already scored for this job
-          if (existingCandidate.scoreStatus === 'pending') {
-            candidateIdsToScore.push(existingCandidate._id.toString());
-          }
-          continue;
-        }
-
-        // Insert new candidate with explicit sourceMode & emailStatus
-        const newCandidate = await Candidate.create({
-          jobId: jobObjectId,
-          fullName: profile.fullName,
-          email: profile.email || undefined,
-          normalizedEmail: normEmail,
-          emailStatus: profile.email ? 'valid' : 'missing',
-          profileUrl: profile.profileUrl || undefined,
-          normalizedProfileUrl: normUrl,
-          source: 'search',
-          sourceMode,
-          currentTitle: profile.currentTitle,
-          currentCompany: profile.currentCompany,
-          skills: profile.skills || [],
-          score: null,
-          scoreStatus: 'pending',
-          scoreMissingInfo: [],
-          missingInfo: [],
-          status: 'Sourced',
-          scoreReason: profile.summary,
-        });
-
-        candidateIdsToScore.push(newCandidate._id.toString());
-      }
-
-      // Enqueue candidates to scoring-queue
-      for (const candidateId of candidateIdsToScore) {
-        await scoringQueue.add('score_candidate', {
-          jobId,
-          candidateId,
-          conversationId,
-        });
-      }
-
-      const totalDiscovered = await Candidate.countDocuments({ jobId: jobObjectId });
-
-      // Emit initial SOURCING_PROGRESS event
-      await publishConversationEvent(conversationId, 'SOURCING_PROGRESS', {
-        jobId,
-        found: totalDiscovered,
-        scored: 0,
-        failed: 0,
-        total: totalDiscovered,
-      });
-
-      console.log(`[SourcingWorker] Enqueued ${candidateIdsToScore.length} candidates for scoring.`);
-      return { found: totalDiscovered, enqueued: candidateIdsToScore.length, sourceMode };
+      return processSourcingPayload(job.data);
     },
     {
       connection: workerConnection,

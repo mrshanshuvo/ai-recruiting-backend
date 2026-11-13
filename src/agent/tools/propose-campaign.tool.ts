@@ -123,14 +123,14 @@ export async function executeProposeCampaign(
       stepIndex: 1,
       delayDays: 3,
       label: 'Follow-Up (Day 3)',
-      subject: `Re: Opportunity: ${targetJob.title} at Aironauts Technologies`,
+      subject: `Following up: Opportunity: ${targetJob.title} at Aironauts Technologies`,
       bodyTemplate: `Hi {{firstName}},\n\nJust following up on my previous note regarding the ${targetJob.title} position at Aironauts Technologies. I know things get busy, so I wanted to ensure this did not slip through the cracks.\n\nLet me know if you might have 10-15 minutes for a quick conversation, or feel free to reply with any initial questions.\n\nBest,\nAironauts Recruiting Team`,
     },
     {
       stepIndex: 2,
       delayDays: 7,
       label: 'Final Follow-Up (Day 7)',
-      subject: `Final follow-up: ${targetJob.title} at Aironauts Technologies`,
+      subject: `Following up: Opportunity: ${targetJob.title} at Aironauts Technologies`,
       bodyTemplate: `Hi {{firstName}},\n\nI wanted to reach out one last time regarding the ${targetJob.title} opportunity. If the timing is not right, no worries at all!\n\nFeel free to keep in touch for future opportunities.\n\nBest regards,\nAironauts Recruiting Team`,
     },
   ];
@@ -156,7 +156,7 @@ export async function executeProposeCampaign(
       currentCompany: c.currentCompany,
       email: c.email!,
       skills: c.skills,
-      snippet: c.snippet,
+      snippet: (c as any).snippet || c.scoreReason,
       personalOpening:
         customOpening !== undefined
           ? customOpening

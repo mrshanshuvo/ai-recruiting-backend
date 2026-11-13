@@ -7,16 +7,18 @@ import { processReplyJob } from '../workers/reply.worker';
 
 export const replyRouter = Router();
 
-const simulateReplySchema = z.object({
-  candidateId: z.string(),
-  emailText: z.string().optional(),
-  message: z.string().optional(),
-  sentiment: z.string().optional(),
-  conversationId: z.string().optional(),
-  sync: z.boolean().optional(),
-});
+const simulateReplySchema = z
+  .object({
+    candidateId: z.string().min(1, 'candidateId is required'),
+    message: z.string().optional(),
+    emailText: z.string().optional(),
+  })
+  .refine((data) => Boolean(data.message?.trim() || data.emailText?.trim()), {
+    message: 'message is required in request body',
+    path: ['message'],
+  });
 
-async function handleSimulateReply(req: Request, res: Response) {
+export async function handleSimulateReply(req: Request, res: Response) {
   try {
     const parseResult = simulateReplySchema.safeParse(req.body);
     if (!parseResult.success) {
@@ -30,8 +32,8 @@ async function handleSimulateReply(req: Request, res: Response) {
       return;
     }
 
-    const { candidateId, sentiment, conversationId, sync } = parseResult.data;
-    const emailText = parseResult.data.emailText || parseResult.data.message || 'I am interested in this role and would love to learn more.';
+    const { candidateId } = parseResult.data;
+    const message = (parseResult.data.message || parseResult.data.emailText)!.trim();
 
     if (!mongoose.Types.ObjectId.isValid(candidateId)) {
       res.status(400).json({
@@ -60,32 +62,10 @@ async function handleSimulateReply(req: Request, res: Response) {
     candidate.outreachStopped = true;
     await candidate.save();
 
-    // If sync requested (e.g. from tests or fast verification)
-    if (sync || req.query.sync === 'true') {
-      const result = await processReplyJob({
-        candidateId,
-        emailText,
-        sentiment,
-        conversationId,
-        isSimulated: true,
-      });
-
-      res.status(200).json({
-        success: true,
-        replyId: result.replyId,
-        candidateId: result.candidateId,
-        replyClass: result.replyClass,
-        newStatus: result.newStatus,
-      });
-      return;
-    }
-
-    // Otherwise enqueue job to BullMQ reply-processing-queue
+    // Enqueue job to BullMQ reply-processing-queue (real queue, no sync flag)
     const job = await replyProcessingQueue.add('process-reply', {
       candidateId,
-      emailText,
-      sentiment,
-      conversationId,
+      emailText: message,
       isSimulated: true,
     });
 
@@ -107,10 +87,6 @@ async function handleSimulateReply(req: Request, res: Response) {
   }
 }
 
-// Support both POST /api/replies/simulate and POST /simulate-reply (DEC-15)
-replyRouter.post('/replies/simulate', handleSimulateReply);
-replyRouter.post('/simulate-reply', handleSimulateReply);
-
 // GET /api/replies?jobId=... or ?candidateId=...
 replyRouter.get('/replies', async (req: Request, res: Response) => {
   try {
@@ -130,3 +106,4 @@ replyRouter.get('/replies', async (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+

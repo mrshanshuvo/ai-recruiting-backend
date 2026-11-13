@@ -47,9 +47,13 @@ import {
   executeResumeCampaign,
 } from './tools/campaign-lifecycle.tool';
 import {
-  proposeBookingLinkInputSchema,
-  executeProposeBookingLink,
+  sendBookingLinkInputSchema,
+  executeSendBookingLink,
 } from './tools/booking-link.tool';
+import {
+  proposeReplyDraftInputSchema,
+  executeProposeReplyDraft,
+} from './tools/propose-reply-draft.tool';
 import {
   updateCandidateStatusInputSchema,
   executeUpdateCandidateStatus,
@@ -414,13 +418,38 @@ export class AgentService {
         },
       }),
 
-      propose_booking_link: tool({
+      send_booking_link: tool({
         description:
-          'Proposes sending an introductory meeting booking link to an interested candidate. Returns an interactive booking_link card.',
-        inputSchema: proposeBookingLinkInputSchema,
-        execute: async (input: z.infer<typeof proposeBookingLinkInputSchema>) => {
-          const res = await executeProposeBookingLink(input, conversationId);
+          'Proposes sending an introductory meeting booking link to an interested candidate. Returns an interactive booking_link card. (DEC-19)',
+        inputSchema: sendBookingLinkInputSchema,
+        execute: async (input: z.infer<typeof sendBookingLinkInputSchema>) => {
+          const res = await executeSendBookingLink(input, conversationId);
           toolMessage = res.message || res.error || 'I prepared the booking link proposal, please confirm.';
+          if (res.card) {
+            parts.push({
+              type: 'card',
+              card: res.card as any,
+            });
+            await publishConversationEvent(conversationId, 'CHAT_PART', {
+              messageId: assistantMsgId.toString(),
+              partIndex: parts.length - 1,
+              part: {
+                type: 'card',
+                card: res.card as any,
+              },
+            });
+          }
+          return res;
+        },
+      }),
+
+      propose_reply_draft: tool({
+        description:
+          'Proposes an email reply draft to an inbound candidate message. Returns an interactive reply_draft card with editable subject and body. Use when the recruiter asks to write, draft, or redo a candidate reply.',
+        inputSchema: proposeReplyDraftInputSchema,
+        execute: async (input: z.infer<typeof proposeReplyDraftInputSchema>) => {
+          const res = await executeProposeReplyDraft(input, conversationId);
+          toolMessage = res.message || res.error || 'I prepared the reply draft, please review and confirm.';
           if (res.card) {
             parts.push({
               type: 'card',
@@ -482,7 +511,8 @@ export class AgentService {
               hasToolCall('propose_campaign'),
               hasToolCall('pause_campaign'),
               hasToolCall('resume_campaign'),
-              hasToolCall('propose_booking_link'),
+              hasToolCall('send_booking_link'),
+              hasToolCall('propose_reply_draft'),
               hasToolCall('update_candidate_status'),
               hasToolCall('confirm_action'),
               hasToolCall('cancel_action'),

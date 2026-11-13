@@ -10,6 +10,7 @@ export const proposeBookingLinkInputSchema = z.object({
   candidateName: z.string().optional().describe('Candidate full name to resolve candidateId'),
   jobId: z.string().optional().describe('Job ID if known'),
 });
+export const sendBookingLinkInputSchema = proposeBookingLinkInputSchema;
 
 export async function executeProposeBookingLink(
   input: z.infer<typeof proposeBookingLinkInputSchema>,
@@ -51,7 +52,7 @@ export async function executeProposeBookingLink(
   const jobTitle = job?.title || 'Engineering Role';
 
   if (!candidate.bookingToken) {
-    candidate.bookingToken = crypto.randomBytes(16).toString('hex');
+    candidate.bookingToken = crypto.randomBytes(24).toString('hex');
     await candidate.save();
   }
 
@@ -90,3 +91,6 @@ export async function executeProposeBookingLink(
     },
   };
 }
+
+export const executeSendBookingLink = executeProposeBookingLink;
+

@@ -312,12 +312,21 @@ export class PendingActionService {
 
         // 2. Create CampaignSteps
         const createdSteps: any[] = [];
+        const step0Subject = steps[0]?.subject || `Opportunity: ${jobTitle} at Aironauts Technologies`;
         for (const s of steps) {
+          let stepSubject = s.subject;
+          if (s.stepIndex > 0) {
+            if (!stepSubject || stepSubject.startsWith('Re:') || stepSubject.startsWith('Final follow-up:')) {
+              stepSubject = `Following up: ${step0Subject}`;
+            } else if (!stepSubject.startsWith('Following up:')) {
+              stepSubject = `Following up: ${step0Subject}`;
+            }
+          }
           const stepDoc = await CampaignStep.create({
             campaignId: campaign._id,
             stepIndex: s.stepIndex,
             delayDays: s.delayDays,
-            subjectTemplate: s.subject,
+            subjectTemplate: stepSubject,
             bodyTemplate: s.bodyTemplate,
           });
           createdSteps.push(stepDoc);
@@ -455,7 +464,7 @@ export class PendingActionService {
         if (!candidate) throw new ActionError('CANDIDATE_NOT_FOUND', `Candidate ${candidateId} not found`, 404);
 
         if (!candidate.bookingToken) {
-          candidate.bookingToken = crypto.randomBytes(16).toString('hex');
+          candidate.bookingToken = crypto.randomBytes(24).toString('hex');
           await candidate.save();
         }
 
@@ -468,6 +477,14 @@ export class PendingActionService {
 
         const bookingUrl = `${env.PUBLIC_FRONTEND_URL}/mock-booking/${candidate.bookingToken}`;
 
+        const sendRes = await EmailTransportService.sendMail({
+          to: candidate.email || 'candidate@example.com',
+          subject: (effectivePayload.subject as string) || `Interview Invitation: Aironauts Technologies`,
+          text:
+            (effectivePayload.body as string) ||
+            `Hi ${candidate.fullName.split(' ')[0]},\n\nPlease select a time slot for our introductory call:\n${bookingUrl}\n\nBest regards,\nAironauts Recruiting Team`,
+        });
+
         result = {
           candidateId,
           candidateName: candidate.fullName,
@@ -475,6 +492,7 @@ export class PendingActionService {
           bookingUrl,
           status: 'Meeting booked',
           previousStatus: transitionRes.previousStatus,
+          previewUrl: (sendRes as any).previewUrl || null,
         };
         break;
       }
@@ -503,9 +521,7 @@ export class PendingActionService {
         const candidate = await Candidate.findById(candidateId);
         if (!candidate) throw new ActionError('CANDIDATE_NOT_FOUND', `Candidate ${candidateId} not found`, 404);
 
-        const transport = EmailTransportService.getTransport();
-        const sendRes = await transport.sendMail({
-          from: env.EMAIL_FROM,
+        const sendRes = await EmailTransportService.sendMail({
           to: candidate.email || 'candidate@example.com',
           subject: (effectivePayload.subject as string) || 'Re: Your Application / Outreach at Aironauts',
           text: replyBody,

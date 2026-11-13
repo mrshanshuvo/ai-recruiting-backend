@@ -5,6 +5,7 @@ export type TokenCaller =
   | 'worker:scoring'
   | 'worker_scoring'
   | 'worker:classification'
+  | 'worker:reply-classification'
   | 'worker_classification'
   | 'worker:drafting'
   | 'worker_drafting';
@@ -33,6 +34,7 @@ const TokenUsageSchema = new Schema<ITokenUsage>(
         'worker:scoring',
         'worker_scoring',
         'worker:classification',
+        'worker:reply-classification',
         'worker_classification',
         'worker:drafting',
         'worker_drafting',
