@@ -24,6 +24,17 @@ Run all backend services (`mongo`, `redis`, `api`, `worker`) inside Docker:
 docker compose up --build
 ```
 
+### Configuration & LLM Models
+Copy `.env.example` to `.env` and set your `GEMINI_API_KEY`:
+```bash
+cp .env.example .env
+```
+Default models configured in `.env.example`:
+- `LLM_MODEL=gemini-3.5-flash-lite` (Fast, optimized for chat streaming and structured JSON extraction under standard API quotas)
+- `LLM_FALLBACK_MODEL=gemini-3.7-flash` (Used for automatic fallback retry if primary encounters 429/503 errors)
+
+> **Note on Model Availability**: Google AI Studio provides varying model names across free and paid tiers. If `gemini-3.5-flash-lite` or `gemini-3.7-flash` are not enabled on your specific Google AI project, standard generally available equivalents such as `gemini-1.5-flash` or `gemini-2.0-flash` can be configured in `.env`.
+
 ## Health Check
 Verify API, MongoDB, and Redis connectivity:
 ```bash

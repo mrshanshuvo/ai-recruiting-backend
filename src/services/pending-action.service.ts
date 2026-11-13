@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { PendingAction, IPendingAction, ActionType } from '../models';
 import { JobService, jobPayloadSchema } from './job.service';
 import { publishConversationEvent } from './event-bus.service';
+import { sourcingQueue } from '../queues';
 
 export class ActionError extends Error {
   public statusCode: number;
@@ -137,7 +138,13 @@ export class PendingActionService {
     id: string,
     conversationId?: string,
     modifiedPayload?: Record<string, unknown>
-  ): Promise<{ actionId: string; status: 'EXECUTED'; result: Record<string, unknown> }> {
+  ): Promise<{
+    actionId: string;
+    status: 'EXECUTED';
+    result: Record<string, unknown>;
+    originalPayload?: Record<string, unknown>;
+    effectivePayload?: Record<string, unknown>;
+  }> {
     const action = await this.getAction(id);
 
     // Verify conversation ownership if specified (e.g. from chat confirm_action tool)
@@ -204,6 +211,7 @@ export class PendingActionService {
     }
 
     // Determine effective payload (editedPayload || payload)
+    const originalPayload = (atomicResult.payload || {}) as Record<string, unknown>;
     const effectivePayload = (modifiedPayload || atomicResult.editedPayload || atomicResult.payload) as Record<
       string,
       unknown
@@ -222,14 +230,38 @@ export class PendingActionService {
         };
         break;
       }
+      case 'START_SOURCING': {
+        const jobId = effectivePayload.jobId as string;
+        const targetCount = Number(effectivePayload.targetCount) || 10;
+        const searchQueries = (effectivePayload.searchQueries as string[]) || [];
+
+        const bullJob = await sourcingQueue.add('source_candidates', {
+          jobId,
+          conversationId: atomicResult.conversationId.toString(),
+          targetCount,
+          searchQueries,
+          actionId: atomicResult._id.toString(),
+        });
+
+        result = {
+          jobId,
+          jobTitle: (effectivePayload.jobTitle as string) || 'Job',
+          targetCount,
+          searchQueries,
+          bullJobId: bullJob.id,
+        };
+        break;
+      }
       default:
         result = { executed: true, appliedEdits: atomicResult.editedPayload };
     }
 
+    const cardStatus = atomicResult.actionType === 'START_SOURCING' ? 'in_progress' : 'confirmed';
+
     // Emit CARD_UPDATED via Redis Pub/Sub to SSE
     await publishConversationEvent(atomicResult.conversationId.toString(), 'CARD_UPDATED', {
       actionId: atomicResult._id.toString(),
-      status: 'confirmed',
+      status: cardStatus,
       result,
     });
 
@@ -237,6 +269,8 @@ export class PendingActionService {
       actionId: atomicResult._id.toString(),
       status: 'EXECUTED',
       result,
+      originalPayload,
+      effectivePayload,
     };
   }
 
@@ -244,7 +278,7 @@ export class PendingActionService {
     id: string,
     conversationId?: string,
     _reason?: string
-  ): Promise<{ actionId: string; status: 'CANCELLED' }> {
+  ): Promise<{ actionId: string; status: 'CANCELLED'; title: string }> {
     const action = await this.getAction(id);
 
     if (conversationId && action.conversationId.toString() !== conversationId) {
@@ -273,6 +307,8 @@ export class PendingActionService {
       throw new ActionError('ACTION_NOT_PENDING', 'Action was already processed', 422);
     }
 
+    const title = (atomicResult.payload as any)?.title || 'Job Proposal';
+
     await publishConversationEvent(atomicResult.conversationId.toString(), 'CARD_UPDATED', {
       actionId: atomicResult._id.toString(),
       status: 'cancelled',
@@ -281,6 +317,7 @@ export class PendingActionService {
     return {
       actionId: atomicResult._id.toString(),
       status: 'CANCELLED',
+      title,
     };
   }
 }

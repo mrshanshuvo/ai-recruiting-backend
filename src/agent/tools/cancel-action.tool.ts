@@ -32,7 +32,7 @@ export async function executeCancelAction(
       success: true,
       actionId: result.actionId,
       status: result.status,
-      message: `Action ${result.actionId} was cancelled.`,
+      message: `Cancelled the job proposal '${result.title}'. Nothing was created.`,
     };
   } catch (error) {
     return {

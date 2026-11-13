@@ -33,8 +33,8 @@ export async function executeParseAndProposeJob(
   let remotePolicy = input.remotePolicy;
   let rawDescription = input.rawTextOrUrl?.slice(0, 5000) || '';
 
-  // If title was not provided directly by the LLM in tool arguments, extract from rawTextOrUrl
-  if (!title && input.rawTextOrUrl) {
+  // If rawTextOrUrl is provided, fetch (if URL) and validate whether it's an actual JD
+  if (input.rawTextOrUrl) {
     let text = input.rawTextOrUrl.trim();
 
     // If input is a URL, fetch with safe SSRF protections
@@ -53,13 +53,28 @@ export async function executeParseAndProposeJob(
 
     // Extract structured attributes via Gemini
     const extracted = await extractJobFromText(text, conversationId);
-    title = extracted.title;
-    mustHaveSkills = extracted.mustHaveSkills;
-    niceToHaveSkills = extracted.niceToHaveSkills;
-    seniority = extracted.seniority;
-    location = extracted.location;
-    salaryRange = extracted.salaryRange;
-    remotePolicy = extracted.remotePolicy;
+
+    // Check if it is a genuine job description
+    if (extracted.isJobDescription === false) {
+      return {
+        success: false,
+        error: `The provided content does not appear to be a job description (${extracted.reason || 'not an open job posting'}). Please paste or link a valid job description.`,
+      };
+    }
+
+    title = extracted.title || title || 'Untitled Job';
+    mustHaveSkills = extracted.mustHaveSkills?.length ? extracted.mustHaveSkills : mustHaveSkills;
+    niceToHaveSkills = extracted.niceToHaveSkills?.length ? extracted.niceToHaveSkills : niceToHaveSkills;
+    seniority = extracted.seniority ?? seniority;
+    location = extracted.location ?? location;
+    if (extracted.salaryRange) {
+      salaryRange = {
+        min: extracted.salaryRange.min ?? undefined,
+        max: extracted.salaryRange.max ?? undefined,
+        currency: extracted.salaryRange.currency || 'USD',
+      };
+    }
+    remotePolicy = extracted.remotePolicy ?? remotePolicy;
   }
 
   const payload = {

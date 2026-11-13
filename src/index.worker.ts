@@ -1,6 +1,8 @@
 import { env } from './config/env';
 import { connectDB } from './config/db';
 import { connectRedis } from './config/redis';
+import { createSourcingWorker } from './workers/sourcing.worker';
+import { createScoringWorker } from './workers/scoring.worker';
 
 async function startWorker(): Promise<void> {
   try {
@@ -8,12 +10,17 @@ async function startWorker(): Promise<void> {
     await connectDB();
     await connectRedis();
 
+    // Start background queue consumers
+    const sourcingWorker = createSourcingWorker();
+    const scoringWorker = createScoringWorker();
+
     console.log(`[Worker Process] Worker process started successfully in ${env.NODE_ENV} mode.`);
     console.log(`[Worker Process] LLM Max Concurrency set to: ${env.WORKER_LLM_MAX_CONCURRENCY}`);
-    console.log(`[Worker Process] Sourcing, scoring, sending, and reply queues ready for job consumption.`);
+    console.log(`[Worker Process] Sourcing and scoring workers active.`);
 
     const shutdown = async (signal: string) => {
       console.log(`[Worker Process] Received ${signal}. Gracefully shutting down...`);
+      await Promise.all([sourcingWorker.close(), scoringWorker.close()]);
       process.exit(0);
     };
 

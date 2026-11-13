@@ -10,6 +10,10 @@ import {
   parseAndProposeJobInputSchema,
   executeParseAndProposeJob,
 } from './tools/parse-and-propose-job.tool';
+import {
+  requestCandidateSourcingInputSchema,
+  executeRequestCandidateSourcing,
+} from './tools/request-candidate-sourcing.tool';
 import { confirmActionInputSchema, executeConfirmAction } from './tools/confirm-action.tool';
 import { cancelActionInputSchema, executeCancelAction } from './tools/cancel-action.tool';
 import {
@@ -151,6 +155,31 @@ export class AgentService {
         },
       }),
 
+      request_candidate_sourcing: tool({
+        description:
+          'Proposes sourcing candidates for a specific job via an interactive sourcing_confirmation card. Inputs: jobId (required ObjectId of existing job), targetCount (optional 1-50, default 10), and optional searchQueries.',
+        inputSchema: requestCandidateSourcingInputSchema,
+        execute: async (input: z.infer<typeof requestCandidateSourcingInputSchema>) => {
+          const res = await executeRequestCandidateSourcing(input, conversationId);
+          toolMessage = res.message || res.error || 'I prepared candidate sourcing, please confirm.';
+          if (res.card) {
+            parts.push({
+              type: 'card',
+              card: res.card as any,
+            });
+            await publishConversationEvent(conversationId, 'CHAT_PART', {
+              messageId: assistantMsgId.toString(),
+              partIndex: parts.length - 1,
+              part: {
+                type: 'card',
+                card: res.card as any,
+              },
+            });
+          }
+          return res;
+        },
+      }),
+
       confirm_action: tool({
         description:
           'Confirms and executes an active PendingAction. Use when the user says "yes", "confirm", "proceed", "do it", or approves an active proposed card.',
@@ -228,6 +257,7 @@ export class AgentService {
             tools: agentTools as any,
             stopWhen: [
               hasToolCall('parse_and_propose_job'),
+              hasToolCall('request_candidate_sourcing'),
               hasToolCall('confirm_action'),
               hasToolCall('cancel_action'),
               isStepCount(3),

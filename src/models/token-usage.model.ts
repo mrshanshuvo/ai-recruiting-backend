@@ -1,6 +1,13 @@
 import mongoose, { Schema, Types } from 'mongoose';
 
-export type TokenCaller = 'agent' | 'worker_scoring' | 'worker_classification' | 'worker_drafting';
+export type TokenCaller =
+  | 'agent'
+  | 'worker:scoring'
+  | 'worker_scoring'
+  | 'worker:classification'
+  | 'worker_classification'
+  | 'worker:drafting'
+  | 'worker_drafting';
 
 export interface ITokenUsage {
   _id: Types.ObjectId;
@@ -21,7 +28,15 @@ const TokenUsageSchema = new Schema<ITokenUsage>(
     conversationId: { type: Schema.Types.ObjectId, ref: 'Conversation', required: false },
     caller: {
       type: String,
-      enum: ['agent', 'worker_scoring', 'worker_classification', 'worker_drafting'],
+      enum: [
+        'agent',
+        'worker:scoring',
+        'worker_scoring',
+        'worker:classification',
+        'worker_classification',
+        'worker:drafting',
+        'worker_drafting',
+      ],
       required: true,
     },
     model: { type: String, required: true },
