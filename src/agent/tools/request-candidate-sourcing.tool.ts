@@ -70,8 +70,16 @@ export async function executeRequestCandidateSourcing(
   let job: any = null;
 
   // 1. Explicit jobId if provided
-  if (input.jobId && mongoose.Types.ObjectId.isValid(input.jobId)) {
-    job = await Job.findById(input.jobId);
+  if (input.jobId) {
+    if (mongoose.Types.ObjectId.isValid(input.jobId)) {
+      job = await Job.findById(input.jobId);
+    }
+    if (!job) {
+      return {
+        success: false,
+        error: `Job with ID '${input.jobId}' was not found. Please provide a valid job ID.`,
+      };
+    }
   }
 
   // 2. Safe resolution from conversation context

@@ -140,13 +140,18 @@ export async function executeWithRetry<T>(
     }
   }
 
-  // Fallback model if primary model failed
-  if (fallbackModel && fallbackModel.trim() && fallbackModel !== primaryModel) {
+  // Fallback model chain if primary model failed
+  const candidateFallbacks = Array.from(
+    new Set([fallbackModel?.trim(), 'gemini-3.5-flash-lite', 'gemini-2.5-flash-lite'].filter(Boolean))
+  ) as string[];
+
+  for (const modelCandidate of candidateFallbacks) {
+    if (modelCandidate === primaryModel) continue;
     console.warn(
-      `[AgentService] Primary model failed after ${maxRetries} attempts. Attempting fallback model: ${fallbackModel}`
+      `[AgentService] Primary model failed after ${maxRetries} attempts. Attempting fallback model: ${modelCandidate}`
     );
     try {
-      return await fn(fallbackModel.trim());
+      return await fn(modelCandidate);
     } catch (fallbackErr) {
       lastError = fallbackErr;
     }

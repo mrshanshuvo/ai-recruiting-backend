@@ -117,12 +117,34 @@ async function testSentence(sentence: string, expectedTools: string[]): Promise<
     apiKey: env.GEMINI_API_KEY,
   });
 
-  const response = await generateText({
-    model: google(env.LLM_MODEL),
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: sentence }],
-    tools: tools as any,
-  });
+  let response: any;
+  try {
+    response = await generateText({
+      model: google(env.LLM_MODEL),
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: sentence }],
+      tools: tools as any,
+    });
+  } catch (err: any) {
+    const isQuotaOrDemand =
+      err?.message?.includes('quota') ||
+      err?.message?.includes('429') ||
+      err?.message?.includes('503') ||
+      err?.message?.includes('high demand');
+
+    if (isQuotaOrDemand) {
+      const fallback = 'gemini-3.5-flash-lite';
+      // Fallback model execution
+      response = await generateText({
+        model: google(fallback),
+        system: SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: sentence }],
+        tools: tools as any,
+      });
+    } else {
+      throw err;
+    }
+  }
 
   const firstCall = response.toolCalls?.[0];
   const calledTool = firstCall?.toolName || 'none';

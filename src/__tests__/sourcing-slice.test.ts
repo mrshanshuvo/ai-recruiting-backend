@@ -399,5 +399,38 @@ Jordan Lee,,https://linkedin.com/in/jordanlee,Frontend Engineer`;
       await Conversation.deleteMany({ _id: { $in: [convA._id, convB._id, convUnlinked._id] } });
       await Job.deleteMany({ _id: { $in: [jobA._id, jobB._id] } });
     });
+
+    it('rejects an invalid or missing jobId when no job can be resolved', async () => {
+      // 1. Invalid hex string or nonexistent ObjectId
+      const resInvalid = await executeRequestCandidateSourcing(
+        { jobId: '000000000000000000000000', targetCount: 5 },
+        new mongoose.Types.ObjectId().toString()
+      );
+      expect(resInvalid.success).toBe(false);
+      expect(resInvalid.error).toContain('was not found');
+
+      // 2. Completely invalid non-ObjectId string
+      const resMalformed = await executeRequestCandidateSourcing(
+        { jobId: 'not-a-valid-id', targetCount: 5 },
+        new mongoose.Types.ObjectId().toString()
+      );
+      expect(resMalformed.success).toBe(false);
+      expect(resMalformed.error).toContain('was not found');
+
+      // 3. Missing jobId with unlinked conversation and no unlinked single job
+      // Create a second dummy job so ambiguous resolution triggers
+      const dummyJob = await Job.create({
+        title: 'Backend Engineer',
+        rawDescription: 'Node.js',
+        status: 'OPEN',
+      });
+      const resMissing = await executeRequestCandidateSourcing(
+        { targetCount: 5 },
+        new mongoose.Types.ObjectId().toString()
+      );
+      expect(resMissing.success).toBe(false);
+      expect(resMissing.error).toContain('Which job would you like to source candidates for?');
+      await Job.findByIdAndDelete(dummyJob._id);
+    });
   });
 });
