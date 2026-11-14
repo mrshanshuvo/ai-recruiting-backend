@@ -62,6 +62,7 @@ export async function executeProposeBookingLink(
     conversationId,
     actionType: 'SEND_BOOKING_LINK',
     payload: {
+      replyClass: 'Wants a meeting',
       candidateId: candidate._id.toString(),
       candidateName: candidate.fullName,
       candidateEmail: candidate.email,
@@ -80,6 +81,7 @@ export async function executeProposeBookingLink(
       actionId: pendingAction._id.toString(),
       status: 'pending',
       payload: {
+        replyClass: 'Wants a meeting',
         candidateId: candidate._id.toString(),
         candidateName: candidate.fullName,
         candidateEmail: candidate.email,

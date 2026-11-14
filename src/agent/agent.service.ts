@@ -260,7 +260,7 @@ export class AgentService {
 
       confirm_action: tool({
         description:
-          'Confirms and executes an active PendingAction. Use when the user says "yes", "confirm", "proceed", "do it", or approves an active proposed card.',
+          'Confirms and executes an active PendingAction. Use ONLY when the user says "yes", "confirm", "proceed", "do it", or approves an active proposed card. NEVER use this tool when the user requests candidate sourcing, emails, or questions.',
         inputSchema: confirmActionInputSchema,
         execute: async (input: z.infer<typeof confirmActionInputSchema>) => {
           const res = await executeConfirmAction(input, conversationId);

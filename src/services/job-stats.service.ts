@@ -37,6 +37,14 @@ export interface JobStatsResponse {
     meetings: number;
     hires: number;
   };
+  everReachedTotals: {
+    totalCandidates: number;
+    contacted: number;
+    replied: number;
+    interested: number;
+    meetings: number;
+    hires: number;
+  };
   rates: {
     replyRate: number | string;
     replyRateFormatted: string;
@@ -44,6 +52,7 @@ export interface JobStatsResponse {
     interestedRateFormatted: string;
   };
   funnel: Record<string, number>;
+  currentStatusCounts: Record<string, number>;
   sourceBreakdown: {
     fixture: number;
     csv: number;
@@ -374,24 +383,29 @@ export class JobStatsService {
       byCaller[k].estimatedCostUsd = Number(byCaller[k].estimatedCostUsd.toFixed(6));
     }
 
+    const everReachedTotals = {
+      totalCandidates,
+      contacted: contactedCount,
+      replied: repliedCount,
+      interested: interestedCount,
+      meetings: meetingsCount,
+      hires: hiresCount,
+    };
+    const currentStatusCounts = funnel;
+
     return {
       jobId: jobObjectId.toString(),
       jobTitle: job.title,
-      totals: {
-        totalCandidates,
-        contacted: contactedCount,
-        replied: repliedCount,
-        interested: interestedCount,
-        meetings: meetingsCount,
-        hires: hiresCount,
-      },
+      totals: everReachedTotals,
+      everReachedTotals,
       rates: {
         replyRate,
         replyRateFormatted,
         interestedRate,
         interestedRateFormatted,
       },
-      funnel,
+      funnel: currentStatusCounts,
+      currentStatusCounts,
       sourceBreakdown,
       campaignSummary: {
         campaignsCount,

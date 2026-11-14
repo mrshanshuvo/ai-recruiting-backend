@@ -543,6 +543,7 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
       actionType: 'SEND_BOOKING_LINK',
       cardType: 'booking_link',
       payload: {
+        replyClass: 'Wants a meeting',
         candidateId: candidate._id.toString(),
         candidateName: candidate.fullName,
         candidateEmail: candidate.email,

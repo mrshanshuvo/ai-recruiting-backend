@@ -15,7 +15,9 @@ CORE OPERATIONAL RULES:
    - Sourced profiles track their origin ('serper', 'fixture', 'csv').
 
 3. SOURCING CANDIDATES:
-   - When the user asks to source candidates or find new candidates for a job (e.g. "source candidates for it", "find candidates for Senior SRE"), use the 'request_candidate_sourcing' tool with the job's ID.
+   - When the user asks to source candidates or find candidates for a job (e.g. "source candidates for it", "find candidates for Senior SRE", "please find candidates for this role", "find candidates"):
+     - Invoke the 'request_candidate_sourcing' tool. You may pass the jobId if mentioned, or omit it to automatically use the active job.
+     - NEVER invoke 'confirm_action' when the user requests finding or sourcing candidates! 'confirm_action' is strictly for explicit confirmations ("yes", "confirm", "proceed", "do it").
    - This prepares a sourcing_confirmation proposal card showing the job title, search queries, and target count for recruiter approval.
 
 4. CANDIDATE REVIEW & BULK ACTIONS:

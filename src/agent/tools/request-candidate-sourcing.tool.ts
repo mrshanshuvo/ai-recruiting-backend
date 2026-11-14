@@ -6,7 +6,8 @@ import { PendingActionService } from '../../services/pending-action.service';
 export const requestCandidateSourcingInputSchema = z.object({
   jobId: z
     .string()
-    .describe('The MongoDB ObjectId of the job to source candidates for'),
+    .optional()
+    .describe('The MongoDB ObjectId of the job to source candidates for. If omitted, the active or most recent job is automatically used.'),
   targetCount: z
     .number()
     .int()
@@ -66,20 +67,21 @@ export async function executeRequestCandidateSourcing(
   input: z.infer<typeof requestCandidateSourcingInputSchema>,
   conversationId: string
 ) {
-  // 1. Validate jobId format
-  if (!mongoose.Types.ObjectId.isValid(input.jobId)) {
-    return {
-      success: false,
-      error: `Invalid jobId format: '${input.jobId}'. Must be a valid 24-character hexadecimal ObjectId.`,
-    };
+  let job = null;
+  if (input.jobId && mongoose.Types.ObjectId.isValid(input.jobId)) {
+    job = await Job.findById(input.jobId);
+  }
+  if (!job) {
+    job = await Job.findOne({ status: 'OPEN' }).sort({ createdAt: -1 });
+    if (!job) {
+      job = await Job.findOne().sort({ createdAt: -1 });
+    }
   }
 
-  // 2. Validate job exists
-  const job = await Job.findById(input.jobId);
   if (!job) {
     return {
       success: false,
-      error: `Job with ID '${input.jobId}' was not found. Please verify the job exists.`,
+      error: `No job found. Please create or specify a job before sourcing candidates.`,
     };
   }
 
