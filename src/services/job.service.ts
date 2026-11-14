@@ -38,7 +38,6 @@ export class JobService {
       salaryRange: validated.salaryRange,
       remotePolicy: validated.remotePolicy,
       status: 'OPEN',
-      candidateCounts: {},
     });
 
     // Link job to conversation if conversationId is provided

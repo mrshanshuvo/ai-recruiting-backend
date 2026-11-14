@@ -76,3 +76,39 @@ Expected response:
 }
 ```
 
+---
+
+## Testing & Verification Architecture
+
+The backend test suite is cleanly partitioned into deterministic local integration tests and live LLM validation suites:
+
+### 1. Deterministic Unit & Integration Tests (`npm test`)
+- **Execution Command**:
+  ```bash
+  npm test
+  ```
+- **Characteristics**:
+  - 100% deterministic, zero network dependencies, LLM calls mocked.
+  - Fully functional with an **EMPTY `GEMINI_API_KEY`** (requires only local MongoDB and Redis).
+  - Covers candidate status state machine transitions, unsubscribe protocol (13 tests), booking token security and slot selection, confirmation gate lifecycle, SSRF defense, sourcing deduplication, and recruitment metrics math.
+
+### 2. Live LLM Verification Tests (`npm run test:live`)
+- **Execution Command**:
+  ```bash
+  npm run test:live
+  ```
+- **Characteristics**:
+  - Executes directly against the configured live Gemini model (`LLM_MODEL=gemini-3.1-flash-lite`).
+  - Verifies live prompt injection defenses, XML delimiter isolation (`<untrusted_candidate_reply>`), hostile candidate snippets, and untrusted external link handling with zero mocks.
+
+---
+
+## AI Inference Pricing & Cost Governance
+
+Model inference costs are managed dynamically in `src/config/pricing.config.ts` per Decision DEC-18 and ADR-0015:
+- **Gemini 3.1 Flash-Lite**: $0.075 / 1M prompt tokens, $0.30 / 1M completion tokens.
+- **Gemini 3.7 Flash**: $0.15 / 1M prompt tokens, $0.60 / 1M completion tokens.
+
+*Note*: In reality, Google AI Studio / Gemini free-tier usage costs $0.00 USD out of pocket. The dollar values tracked in MongoDB and displayed on the dashboard are explicit enterprise rate estimates for transparency and capacity governance.
+
+

@@ -16,7 +16,6 @@ export async function executeListJobs(input: z.infer<typeof listJobsInputSchema>
       seniority: j.seniority,
       location: j.location,
       status: j.status,
-      candidateCounts: j.candidateCounts,
     })),
   };
 }
@@ -55,7 +54,6 @@ export async function executeGetJobStats(input: z.infer<typeof getJobStatsInputS
     success: true,
     jobId: job._id.toString(),
     title: job.title,
-    candidateCounts: job.candidateCounts,
   };
 }
 

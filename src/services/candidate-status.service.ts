@@ -108,9 +108,6 @@ export class CandidateStatusService {
         timestamp: new Date(),
       });
 
-      // Update Job candidateCounts if job exists
-      await this.updateJobCounts(candidate.jobId, currentStatus, 'Unsubscribed');
-
       return {
         success: true,
         candidateId: candidate._id.toString(),
@@ -166,9 +163,6 @@ export class CandidateStatusService {
       timestamp: new Date(),
     });
 
-    // 7. Update Job candidateCounts
-    await this.updateJobCounts(candidate.jobId, currentStatus, newStatus);
-
     return {
       success: true,
       candidateId: candidate._id.toString(),
@@ -213,24 +207,5 @@ export class CandidateStatusService {
       updatedCount,
       results,
     };
-  }
-
-  /**
-   * Helper to keep Job.candidateCounts in sync
-   */
-  private static async updateJobCounts(
-    jobId: mongoose.Types.ObjectId,
-    prevStatus: CandidateStatus,
-    newStatus: CandidateStatus
-  ): Promise<void> {
-    try {
-      const incUpdate: Record<string, number> = {};
-      incUpdate[`candidateCounts.${prevStatus}`] = -1;
-      incUpdate[`candidateCounts.${newStatus}`] = 1;
-
-      await Job.updateOne({ _id: jobId }, { $inc: incUpdate });
-    } catch (e) {
-      console.warn(`[CandidateStatusService] Failed to update candidateCounts for job ${jobId}:`, e);
-    }
   }
 }

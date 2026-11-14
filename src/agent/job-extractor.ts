@@ -2,6 +2,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { generateObject } from 'ai';
 import { z } from 'zod';
 import { env } from '../config/env';
+import { calculateEstimatedCostUsd } from '../config/pricing.config';
 import { TokenUsage } from '../models';
 
 const extractionSchema = z.object({
@@ -82,8 +83,7 @@ ${text}
     const promptTokens = usageAny.inputTokens ?? usageAny.promptTokens ?? 0;
     const completionTokens = usageAny.outputTokens ?? usageAny.completionTokens ?? 0;
     const totalTokens = usageAny.totalTokens ?? (promptTokens + completionTokens);
-    // Estimated cost ($0.075 / 1M input, $0.30 / 1M output)
-    const cost = (promptTokens * 0.075 + completionTokens * 0.3) / 1000000;
+    const cost = calculateEstimatedCostUsd(env.LLM_MODEL, promptTokens, completionTokens);
 
     await TokenUsage.create({
       conversationId: conversationId ? conversationId : undefined,
@@ -92,7 +92,7 @@ ${text}
       promptTokens,
       completionTokens,
       totalTokens,
-      estimatedCostUsd: Number(cost.toFixed(6)),
+      estimatedCostUsd: cost,
       timestamp: new Date(),
     });
   }

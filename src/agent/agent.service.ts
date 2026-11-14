@@ -3,6 +3,7 @@ import { streamText, tool, hasToolCall, isStepCount } from 'ai';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 import { env } from '../config/env';
+import { calculateEstimatedCostUsd } from '../config/pricing.config';
 import { Message, TokenUsage, IMessagePart } from '../models';
 import { SYSTEM_PROMPT } from './system-prompt';
 import { publishConversationEvent } from '../services/event-bus.service';
@@ -571,7 +572,7 @@ export class AgentService {
               const promptTokens = usageAny.inputTokens ?? usageAny.promptTokens ?? 0;
               const completionTokens = usageAny.outputTokens ?? usageAny.completionTokens ?? 0;
               const totalTokens = usageAny.totalTokens ?? promptTokens + completionTokens;
-              const cost = (promptTokens * 0.075 + completionTokens * 0.3) / 1000000;
+              const cost = calculateEstimatedCostUsd(modelName, promptTokens, completionTokens);
 
               await TokenUsage.create({
                 conversationId: new mongoose.Types.ObjectId(conversationId),
@@ -580,7 +581,7 @@ export class AgentService {
                 promptTokens,
                 completionTokens,
                 totalTokens,
-                estimatedCostUsd: Number(cost.toFixed(6)),
+                estimatedCostUsd: cost,
                 timestamp: new Date(),
               });
             }

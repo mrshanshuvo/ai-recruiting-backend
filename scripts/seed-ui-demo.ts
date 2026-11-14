@@ -1,3 +1,13 @@
+/**
+ * -----------------------------------------------------------------------------
+ * DEVELOPMENT-ONLY SEED SCRIPT (DEC-18 / ADR-0010)
+ *
+ * NOTICE: This script generates entirely FAKE candidate data, synthetic token
+ * records, and mock communication logs strictly for local UI layout inspection.
+ * It is NOT part of clean-slate automated testing or production runtime.
+ * -----------------------------------------------------------------------------
+ */
+
 import mongoose from 'mongoose';
 import { env } from '../src/config/env';
 import { Job, Candidate, Conversation, Message, OutreachMessage, Campaign, CampaignStep, ActivityLog, TokenUsage } from '../src/models';

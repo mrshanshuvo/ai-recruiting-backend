@@ -5,6 +5,7 @@ import request from 'supertest';
 import { env } from '../config/env';
 import { Job, Candidate, Reply, Campaign, OutreachMessage, ActivityLog, TokenUsage, Conversation } from '../models';
 import { JobStatsService, ALL_PIPELINE_STATUSES } from '../services/job-stats.service';
+import { calculateEstimatedCostUsd } from '../config/pricing.config';
 import { jobRouter } from '../routes/job.route';
 import { executeGetJobStats } from '../agent/tools/get-job-stats.tool';
 
@@ -362,6 +363,18 @@ describe('Checkpoint 9: Recruiting Pipeline Metrics, Funnel Dashboard & Stats To
       expect(stats.tokenUsage.byCaller['agent'].totalTokens).toBe(1200);
       expect(stats.tokenUsage.byCaller['worker:scoring'].totalTokens).toBe(3500);
     });
+
+    it('applies per-model pricing table correctly across two different models (A6)', () => {
+      // gemini-3.1-flash-lite: $0.075 / 1M prompt, $0.30 / 1M completion
+      const costLite = calculateEstimatedCostUsd('gemini-3.1-flash-lite', 1000000, 1000000);
+      expect(costLite).toBe(0.375); // 0.075 + 0.30
+
+      // gemini-3.7-flash: $0.15 / 1M prompt, $0.60 / 1M completion
+      const costFlash = calculateEstimatedCostUsd('gemini-3.7-flash', 1000000, 1000000);
+      expect(costFlash).toBe(0.75); // 0.15 + 0.60
+
+      expect(costFlash).toBeGreaterThan(costLite);
+    });
   });
 
   // 5. Job Resolution & Ambiguous Names (Item 4)
@@ -460,3 +473,4 @@ describe('Checkpoint 9: Recruiting Pipeline Metrics, Funnel Dashboard & Stats To
     });
   });
 });
+

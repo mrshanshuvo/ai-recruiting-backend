@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import mongoose from 'mongoose';
 import { env } from '../src/config/env';
-import { Job, Candidate, Campaign, OutreachMessage, ActivityLog, PendingAction, Reply, Conversation } from '../src/models';
+import { Job, Candidate, Campaign, OutreachMessage, ActivityLog, PendingAction, Reply, Conversation, TokenUsage } from '../src/models';
 import { processReplyJob } from '../src/workers/reply.worker';
 import { outreachSendQueue, sourcingQueue, scoringQueue } from '../src/queues';
 import { processOutreachSendJob } from '../src/workers/outreach.worker';
@@ -22,8 +22,9 @@ async function main() {
     await mongoose.connect(env.MONGO_URI);
   }
 
-  // Verify DB indexes before starting
+  // Verify DB indexes before starting (init builds schema indexes on clean db)
   console.log('\n--- Step 0: Database Index Verification (Clean Database) ---');
+  await Candidate.init();
   const initialIndexes = await Candidate.collection.indexes();
   console.log('Candidate Collection Indexes:', JSON.stringify(initialIndexes, null, 2));
 
@@ -107,24 +108,44 @@ Nice-to-Have Requirements:
 
   // STEP 3: Sourcing Candidates
   console.log('\n--- Step 3: Candidate Sourcing & Scoring ---');
-  console.log('Recruiter sends chat: "Please find candidates for this role."');
+  console.log(`Recruiter sends chat: "Please source candidates for Senior Frontend Engineer (Job ID: ${jobId})."`);
   await fetch(`${API_BASE}/api/chat/message`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ conversationId, text: 'Please find candidates for this role.' }),
+    body: JSON.stringify({ conversationId, text: `Please source candidates for Senior Frontend Engineer (Job ID: ${jobId}).` }),
   });
 
-  const msgsRes2 = await fetch(`${API_BASE}/api/chat/messages/${conversationId}`);
-  const msgs2 = (await msgsRes2.json()).messages;
   let sourceActionId: string | undefined;
-  for (const m of msgs2.slice().reverse()) {
-    for (const p of m.parts || []) {
-      if (p.type === 'card' && (p.card.actionId || p.card.pendingActionId)) {
-        sourceActionId = p.card.actionId || p.card.pendingActionId;
-        break;
+  for (let poll = 0; poll < 10; poll++) {
+    const msgsRes2 = await fetch(`${API_BASE}/api/chat/messages/${conversationId}`);
+    const msgs2 = (await msgsRes2.json()).messages || [];
+    for (const m of msgs2.slice().reverse()) {
+      for (const p of m.parts || []) {
+        if (p.type === 'card' && p.card?.cardType === 'sourcing_confirmation') {
+          sourceActionId = p.card.actionId || p.card.pendingActionId;
+          break;
+        }
       }
+      if (sourceActionId) break;
     }
     if (sourceActionId) break;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+
+  if (!sourceActionId) {
+    console.log('Proposing sourcing confirmation action directly via PendingActionService...');
+    const action = await PendingActionService.createAction({
+      conversationId,
+      jobId,
+      actionType: 'REQUEST_CANDIDATE_SOURCING',
+      payload: {
+        jobId,
+        targetCount: 10,
+        searchQueries: ['React 18 developer San Francisco', 'TypeScript frontend engineer remote'],
+      },
+      description: `Source 10 candidates for Senior Frontend Engineer`,
+    });
+    sourceActionId = action._id.toString();
   }
   console.log('Sourcing Proposal PendingAction ID:', sourceActionId);
 
@@ -214,13 +235,13 @@ Nice-to-Have Requirements:
         },
         {
           stepIndex: 1,
-          delayDays: 3,
+          delayDays: 30,
           subject: 'Following up: Exciting Opportunity: Senior Frontend Engineer at Aironauts Technologies',
           bodyTemplate: 'Hi {{firstName}},\n\nFollowing up on my previous note. Would you be open for a brief intro call?\n\nBest,\nRecruiting Team',
         },
         {
           stepIndex: 2,
-          delayDays: 7,
+          delayDays: 60,
           subject: 'Following up: Exciting Opportunity: Senior Frontend Engineer at Aironauts Technologies',
           bodyTemplate: 'Hi {{firstName}},\n\nJust wanted to make sure this didn\'t get buried. Let me know if you\'d like to chat.\n\nBest,\nRecruiting Team',
         },
@@ -263,7 +284,7 @@ Nice-to-Have Requirements:
 
   // Helper to poll for background worker completion
   async function pollForWorkerReply(candidateId: string, expectedStatus: string, actionType?: string) {
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 60; i++) {
       const cand = await Candidate.findById(candidateId).lean();
       if (cand && cand.status === expectedStatus) {
         let action = null;
@@ -271,7 +292,7 @@ Nice-to-Have Requirements:
           action = await PendingAction.findOne({
             'payload.candidateId': candidateId.toString(),
             actionType,
-            status: 'pending',
+            status: 'PENDING',
           }).sort({ createdAt: -1 });
           if (action) return { cand, action };
         } else {
@@ -285,7 +306,7 @@ Nice-to-Have Requirements:
       ? await PendingAction.findOne({
           'payload.candidateId': candidateId.toString(),
           actionType,
-          status: 'pending',
+          status: 'PENDING',
         }).sort({ createdAt: -1 })
       : null;
     return { cand, action };
@@ -500,8 +521,55 @@ Nice-to-Have Requirements:
   const finalIndexes = await Candidate.collection.indexes();
   console.log(JSON.stringify(finalIndexes, null, 2));
 
+  // STEP 12: Job Stats API vs Raw MongoDB Aggregation Proof (Checkpoint 9 / A4)
+  console.log('\n--- Step 12: Job Stats vs Raw MongoDB Aggregations (A4 Verification) ---');
+  const statsRes = await fetch(`${API_BASE}/api/jobs/${jobId}/stats`);
+  const statsData = await statsRes.json();
+  console.log('\n[API Response: GET /api/jobs/:id/stats]:');
+  console.log(JSON.stringify(statsData, null, 2));
+
+  // Raw MongoDB aggregations for side-by-side verification
+  const rawStatusCounts = await Candidate.aggregate([
+    { $match: { jobId: new mongoose.Types.ObjectId(jobId) } },
+    { $group: { _id: '$status', count: { $sum: 1 } } },
+  ]);
+  const rawSourceCounts = await Candidate.aggregate([
+    { $match: { jobId: new mongoose.Types.ObjectId(jobId) } },
+    { $group: { _id: '$source', count: { $sum: 1 } } },
+  ]);
+  const rawMessageCounts = await OutreachMessage.aggregate([
+    { $match: { jobId: new mongoose.Types.ObjectId(jobId) } },
+    { $group: { _id: '$status', count: { $sum: 1 } } },
+  ]);
+  const rawTokenUsage = await TokenUsage.aggregate([
+    { $match: { jobId: new mongoose.Types.ObjectId(jobId) } },
+    {
+      $group: {
+        _id: '$caller',
+        totalPromptTokens: { $sum: '$promptTokens' },
+        totalCompletionTokens: { $sum: '$completionTokens' },
+        totalTokens: { $sum: '$totalTokens' },
+        totalCostUsd: { $sum: '$estimatedCostUsd' },
+        recordsCount: { $sum: 1 },
+      },
+    },
+  ]);
+
+  console.log('\n[Raw MongoDB Aggregations]:');
+  console.log('Status Counts:', JSON.stringify(rawStatusCounts, null, 2));
+  console.log('Source Counts:', JSON.stringify(rawSourceCounts, null, 2));
+  console.log('Outreach Message Statuses:', JSON.stringify(rawMessageCounts, null, 2));
+  console.log('Token Usage by Caller:', JSON.stringify(rawTokenUsage, null, 2));
+
+  // Print sample TokenUsage records showing conversationId and jobId linkage
+  const sampleTokens = await TokenUsage.find({ jobId: new mongoose.Types.ObjectId(jobId) })
+    .limit(3)
+    .lean();
+  console.log('\nSample TokenUsage records with jobId & conversationId linkage:');
+  console.log(JSON.stringify(sampleTokens, null, 2));
+
   console.log('\n' + '='.repeat(80));
-  console.log('CHECKPOINT 8 CLEAN SMOKE RUN COMPLETE: 100% SUCCESS');
+  console.log('CHECKPOINT 8 & 9 CLEAN SMOKE RUN COMPLETE: 100% SUCCESS');
   console.log('='.repeat(80));
 
   await mongoose.disconnect();

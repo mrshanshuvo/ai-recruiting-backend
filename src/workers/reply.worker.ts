@@ -6,6 +6,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { generateObject } from 'ai';
 import { z } from 'zod';
 import { env } from '../config/env';
+import { calculateEstimatedCostUsd } from '../config/pricing.config';
 import { redisConnection } from '../config/redis';
 import { Candidate, Job, Reply, TokenUsage, Conversation, Message, IJob } from '../models';
 import { REPLY_PROCESSING_QUEUE_NAME, outreachSendQueue } from '../queues';
@@ -182,21 +183,31 @@ export function buildGroundedQuestionDraft(job: IJob | null, questionText: strin
 export async function classifyReplyWithLLM(
   jobTitle: string,
   emailText: string,
-  conversationId?: string
+  conversationId?: string,
+  jobId?: mongoose.Types.ObjectId
 ): Promise<{
-  replyClass: ReplyClassType;
+  replyClass?: ReplyClassType;
   reason: string;
   draftResponse?: string;
+  needsReview?: boolean;
 }> {
   if (!env.GEMINI_API_KEY) {
-    return heuristicClassifyReply(emailText);
+    return {
+      needsReview: true,
+      reason: 'GEMINI_API_KEY is not configured',
+    };
   }
 
   const google = createGoogleGenerativeAI({
     apiKey: env.GEMINI_API_KEY,
   });
 
-  const sanitized = emailText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const sanitized = emailText
+    .replace(/<\/?untrusted_candidate_reply>/gi, '')
+    .replace(/<\/?job_context>/gi, '')
+    .replace(/<\/?candidate_profile>/gi, '')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 
   const prompt = `You are an automated inbound email classification engine for recruiting at Aironauts Technologies.
 Analyze the following inbound email message from a candidate regarding an outreach email for a job opening.
@@ -238,16 +249,17 @@ SECURITY AND INSTRUCTION HIERARCHY:
           const promptTokens = usageAny.inputTokens ?? usageAny.promptTokens ?? 0;
           const completionTokens = usageAny.outputTokens ?? usageAny.completionTokens ?? 0;
           const totalTokens = usageAny.totalTokens ?? promptTokens + completionTokens;
-          const cost = (promptTokens * 0.075 + completionTokens * 0.3) / 1000000;
+          const cost = calculateEstimatedCostUsd(env.LLM_MODEL, promptTokens, completionTokens);
 
           await TokenUsage.create({
+            jobId: jobId ? new mongoose.Types.ObjectId(jobId) : undefined,
             conversationId: conversationId ? new mongoose.Types.ObjectId(conversationId) : undefined,
             caller: 'worker:reply-classification',
             model: env.LLM_MODEL,
             promptTokens,
             completionTokens,
             totalTokens,
-            estimatedCostUsd: Number(cost.toFixed(6)),
+            estimatedCostUsd: cost,
             timestamp: new Date(),
           });
         }
@@ -261,14 +273,20 @@ SECURITY AND INSTRUCTION HIERARCHY:
     } catch (err: any) {
       console.warn(`[ReplyWorker] LLM classification attempt ${attempt} failed:`, err?.message || err);
       if (attempt === 3) {
-        console.warn('[ReplyWorker] Falling back to heuristic classifier.');
-        return heuristicClassifyReply(emailText);
+        console.warn('[ReplyWorker] Retries exhausted. Marking reply as needsReview.');
+        return {
+          needsReview: true,
+          reason: `LLM classification failed after 3 attempts: ${err?.message || err}`,
+        };
       }
       await new Promise((r) => setTimeout(r, 1000 * attempt));
     }
   }
 
-  return heuristicClassifyReply(emailText);
+  return {
+    needsReview: true,
+    reason: 'LLM classification failed after retry attempts',
+  };
 }
 
 export async function processReplyJob(data: ReplyJobPayload): Promise<{
@@ -308,9 +326,10 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
 
   // 2. Classify reply
   let classification: {
-    replyClass: ReplyClassType;
+    replyClass?: ReplyClassType;
     reason: string;
     draftResponse?: string;
+    needsReview?: boolean;
   };
 
   if (sentiment) {
@@ -339,7 +358,7 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
       };
     }
   } else {
-    classification = await classifyReplyWithLLM(jobTitle, emailText, conversationId);
+    classification = await classifyReplyWithLLM(jobTitle, emailText, conversationId, candidate.jobId);
   }
 
   // 3. Find or create Conversation linked to this job per F2
@@ -358,6 +377,46 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
   }
 
   const targetConvId = targetConversation?._id?.toString() || new mongoose.Types.ObjectId().toString();
+
+  // Handle unclassifiable reply requiring recruiter review
+  if (classification.needsReview) {
+    const replyDoc = await Reply.create({
+      candidateId: candidate._id,
+      jobId: candidate.jobId,
+      senderEmail: candidate.email,
+      body: emailText,
+      needsReview: true,
+      classificationReason: classification.reason || 'Could not classify reply',
+      isSimulated,
+      receivedAt: new Date(),
+    });
+
+    if (targetConversation) {
+      const assistantMsg = await Message.create({
+        conversationId: targetConversation._id,
+        role: 'assistant',
+        parts: [
+          {
+            type: 'text',
+            text: 'I could not classify this reply, please review it.',
+          },
+        ],
+      });
+
+      await publishConversationEvent(targetConversation._id.toString(), 'CHAT_PART', {
+        messageId: assistantMsg._id.toString(),
+        partIndex: 0,
+        part: assistantMsg.parts[0],
+      });
+    }
+
+    return {
+      replyId: replyDoc._id.toString(),
+      candidateId: candidate._id.toString(),
+      replyClass: 'unclassified',
+      newStatus: candidate.status,
+    };
+  }
 
   // 4. State Transitions & Action Creation per F2 Table & Strict State Machine (F7)
   let pendingActionId: string | undefined;
@@ -476,7 +535,7 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
         candidateId: candidate._id.toString(),
         candidateName: candidate.fullName,
         candidateEmail: candidate.email,
-        replyClass: 'Question',
+        replyClass: classification.replyClass!,
         candidateMessage: emailText,
         subject: `Re: Opportunity: ${jobTitle} at Aironauts Technologies`,
         draftedBody: draftBody,
@@ -503,7 +562,7 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
                 candidateId: candidate._id.toString(),
                 candidateName: candidate.fullName,
                 candidateEmail: candidate.email,
-                replyClass: 'Question',
+                replyClass: classification.replyClass!,
                 candidateMessage: emailText,
                 subject: `Re: Opportunity: ${jobTitle} at Aironauts Technologies`,
                 draftedBody: draftBody,
@@ -547,7 +606,7 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
         candidateId: candidate._id.toString(),
         candidateName: candidate.fullName,
         candidateEmail: candidate.email,
-        replyClass: 'Interested',
+        replyClass: classification.replyClass!,
         candidateMessage: emailText,
         subject: `Re: Opportunity: ${jobTitle} at Aironauts Technologies`,
         draftedBody: draftBody,
@@ -574,7 +633,7 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
                 candidateId: candidate._id.toString(),
                 candidateName: candidate.fullName,
                 candidateEmail: candidate.email,
-                replyClass: 'Interested',
+                replyClass: classification.replyClass!,
                 candidateMessage: emailText,
                 subject: `Re: Opportunity: ${jobTitle} at Aironauts Technologies`,
                 draftedBody: draftBody,
@@ -618,7 +677,7 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
         candidateId: candidate._id.toString(),
         candidateName: candidate.fullName,
         candidateEmail: candidate.email,
-        replyClass: 'Not interested',
+        replyClass: classification.replyClass!,
         candidateMessage: emailText,
         subject: `Re: Opportunity: ${jobTitle} at Aironauts Technologies`,
         draftedBody: draftBody,
@@ -645,7 +704,7 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
                 candidateId: candidate._id.toString(),
                 candidateName: candidate.fullName,
                 candidateEmail: candidate.email,
-                replyClass: 'Not interested',
+                replyClass: classification.replyClass!,
                 candidateMessage: emailText,
                 subject: `Re: Opportunity: ${jobTitle} at Aironauts Technologies`,
                 draftedBody: draftBody,
@@ -670,7 +729,7 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
     jobId: candidate.jobId,
     senderEmail: candidate.email || 'candidate@example.com',
     body: emailText,
-    replyClass: classification.replyClass,
+    replyClass: classification.replyClass || 'unclassified',
     classificationReason: classification.reason,
     isSimulated,
     receivedAt: new Date(),
@@ -692,7 +751,7 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
   return {
     replyId: reply._id.toString(),
     candidateId: candidate._id.toString(),
-    replyClass: classification.replyClass,
+    replyClass: classification.replyClass || 'unclassified',
     newStatus: updatedCandidate?.status || candidate.status,
     actionId: pendingActionId,
   };

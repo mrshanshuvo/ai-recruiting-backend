@@ -69,7 +69,13 @@ async function searchSerper(queries: string[], limit: number): Promise<RawCandid
 }
 
 function loadFixtures(job: any, targetCount: number): RawCandidateProfile[] {
-  const fixturesPath = path.join(__dirname, '../data/candidate-fixtures.json');
+  let fixturesPath = path.join(__dirname, '../data/candidate-fixtures.json');
+  if (!fs.existsSync(fixturesPath)) {
+    fixturesPath = path.join(__dirname, '../../src/data/candidate-fixtures.json');
+  }
+  if (!fs.existsSync(fixturesPath)) {
+    fixturesPath = path.resolve(process.cwd(), 'src/data/candidate-fixtures.json');
+  }
   if (!fs.existsSync(fixturesPath)) {
     return [];
   }

@@ -21,7 +21,6 @@ export interface IJob extends Document {
   remotePolicy?: RemotePolicy;
   status: JobStatus;
   conversationId?: Types.ObjectId;
-  candidateCounts: Record<string, number>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -50,11 +49,6 @@ const JobSchema = new Schema<IJob>(
       default: 'OPEN',
     },
     conversationId: { type: Schema.Types.ObjectId, ref: 'Conversation', required: false },
-    candidateCounts: {
-      type: Map,
-      of: Number,
-      default: {},
-    },
   },
   { timestamps: true }
 );

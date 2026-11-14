@@ -14,8 +14,9 @@ export interface IReply extends Document {
   outreachMessageId?: Types.ObjectId;
   senderEmail: string;
   body: string;
-  replyClass: ReplyClass;
+  replyClass?: ReplyClass;
   classificationReason?: string;
+  needsReview: boolean;
   isSimulated: boolean;
   receivedAt: Date;
 }
@@ -30,9 +31,10 @@ const ReplySchema = new Schema<IReply>(
     replyClass: {
       type: String,
       enum: ['Interested', 'Not interested', 'Question', 'Wants a meeting', 'Unsubscribe'],
-      required: true,
+      required: false,
     },
     classificationReason: { type: String, required: false },
+    needsReview: { type: Boolean, default: false },
     isSimulated: { type: Boolean, default: false },
     receivedAt: { type: Date, default: Date.now },
   },

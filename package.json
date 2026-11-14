@@ -4,12 +4,13 @@
   "description": "Backend API and BullMQ worker for AI Recruiting Co-Worker",
   "main": "dist/index.api.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e 'require(\"fs\").cpSync(\"src/data\", \"dist/data\", { recursive: true, errorOnExist: false })'",
     "start:api": "node dist/index.api.js",
     "start:worker": "node dist/index.worker.js",
     "dev:api": "tsx watch src/index.api.ts",
     "dev:worker": "tsx watch src/index.worker.ts",
-    "test": "vitest run"
+    "test": "vitest run --exclude '**/*.live.test.ts'",
+    "test:live": "vitest run src/__tests__/prompt-injection.live.test.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "4.0.120",

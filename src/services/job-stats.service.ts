@@ -9,6 +9,7 @@ import {
   TokenUsage,
   Conversation,
 } from '../models';
+import { calculateEstimatedCostUsd } from '../config/pricing.config';
 
 export const ALL_PIPELINE_STATUSES = [
   'Sourced',
@@ -349,7 +350,7 @@ export class JobStatsService {
       const p = tu.promptTokens || 0;
       const c = tu.completionTokens || 0;
       const t = tu.totalTokens || p + c;
-      const cost = tu.estimatedCostUsd || 0;
+      const cost = tu.estimatedCostUsd ?? calculateEstimatedCostUsd(tu.model || 'gemini-3.1-flash-lite', p, c);
 
       totalPromptTokens += p;
       totalCompletionTokens += c;
