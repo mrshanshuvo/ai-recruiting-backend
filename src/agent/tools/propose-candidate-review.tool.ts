@@ -4,7 +4,10 @@ import { Candidate, Job } from '../../models';
 import { PendingActionService } from '../../services/pending-action.service';
 
 export const proposeCandidateReviewInputSchema = z.object({
-  jobId: z.string().describe('The job ID to review candidates for'),
+  jobId: z
+    .string()
+    .optional()
+    .describe('The job ID to review candidates for. If omitted, automatically resolved from conversation or active job.'),
   candidateIds: z
     .array(z.string())
     .optional()
@@ -21,20 +24,27 @@ export async function executeProposeCandidateReview(
   input: z.infer<typeof proposeCandidateReviewInputSchema>,
   conversationId: string
 ) {
-  if (!mongoose.Types.ObjectId.isValid(input.jobId)) {
-    return {
-      success: false,
-      error: 'Invalid jobId format',
-    };
+  let dbJob = null;
+  if (input.jobId && mongoose.Types.ObjectId.isValid(input.jobId)) {
+    dbJob = await Job.findById(input.jobId).lean();
   }
-
-  const dbJob = await Job.findById(input.jobId).lean();
+  if (!dbJob && conversationId && mongoose.Types.ObjectId.isValid(conversationId)) {
+    const { Conversation } = await import('../../models');
+    const conv = await Conversation.findById(conversationId).lean();
+    if (conv?.jobId) {
+      dbJob = await Job.findById(conv.jobId).lean();
+    }
+  }
+  if (!dbJob) {
+    dbJob = await Job.findOne().sort({ createdAt: -1 }).lean();
+  }
   if (!dbJob) {
     return {
       success: false,
-      error: 'Job not found',
+      error: 'No active job found to review candidates for.',
     };
   }
+  const resolvedJobId = dbJob._id.toString();
 
   const rawList = input.candidateIds || [];
   const objectIds: mongoose.Types.ObjectId[] = [];
@@ -54,7 +64,7 @@ export async function executeProposeCandidateReview(
   // Resolve direct ObjectIds
   if (objectIds.length > 0) {
     const directCands = await Candidate.find({
-      jobId: input.jobId,
+      jobId: resolvedJobId,
       _id: { $in: objectIds },
     }).lean();
     for (const c of directCands) {
@@ -64,7 +74,7 @@ export async function executeProposeCandidateReview(
 
   // Resolve candidate names with exact/unique partial/ambiguous check
   for (const name of names) {
-    const res = await resolveCandidateByName(input.jobId, name);
+    const res = await resolveCandidateByName(resolvedJobId, name);
     if (!res.success) {
       return {
         success: false,
@@ -83,7 +93,7 @@ export async function executeProposeCandidateReview(
   if (candidates.length === 0) {
     const count = input.topRemainingCount || (rawList.length > 0 ? rawList.length : 3);
     candidates = await Candidate.find({
-      jobId: input.jobId,
+      jobId: resolvedJobId,
       status: 'Sourced',
     })
       .sort({ score: -1 })
@@ -122,10 +132,10 @@ export async function executeProposeCandidateReview(
 
   const pendingAction = await PendingActionService.createAction({
     conversationId,
-    jobId: input.jobId,
+    jobId: resolvedJobId,
     actionType: 'BULK_REVIEW',
     payload: {
-      jobId: input.jobId,
+      jobId: resolvedJobId,
       jobTitle: dbJob.title,
       decision: input.decision,
       targetStatus,
@@ -144,7 +154,7 @@ export async function executeProposeCandidateReview(
       actionId: pendingAction._id.toString(),
       status: 'pending',
       payload: {
-        jobId: input.jobId,
+        jobId: resolvedJobId,
         jobTitle: dbJob.title,
         decision: input.decision,
         targetStatus,

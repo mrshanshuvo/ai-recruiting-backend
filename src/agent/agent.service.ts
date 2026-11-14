@@ -235,7 +235,7 @@ export class AgentService {
 
       propose_candidate_review: tool({
         description:
-          'Proposes reviewing and accepting or rejecting candidates in bulk (e.g. "accept top 5", "reject candidates below 50"). Returns a candidate_table card with PendingAction. Requires human confirmation before any candidate status changes.',
+          'Proposes reviewing and accepting or rejecting candidates in bulk (e.g. "accept the top 3", "accept top 5", "reject everyone below 50"). Accepts decision and topRemainingCount. jobId is optional. Returns a candidate_table card with PendingAction. Requires human confirmation before any candidate status changes.',
         inputSchema: proposeCandidateReviewInputSchema,
         execute: async (input: z.infer<typeof proposeCandidateReviewInputSchema>) => {
           const res = await executeProposeCandidateReview(input, conversationId);
@@ -283,7 +283,8 @@ export class AgentService {
       }),
 
       list_jobs: tool({
-        description: 'Lists existing recruitment jobs and their status from the database.',
+        description:
+          'Lists all recruitment jobs in the database. Use ONLY when the recruiter specifically asks to list or see all available jobs (e.g. "list all jobs", "what jobs exist?"). NEVER invoke as a prerequisite lookup for candidates, campaigns, stats, or status updates.',
         inputSchema: listJobsInputSchema,
         execute: async (input: z.infer<typeof listJobsInputSchema>) => {
           return executeListJobs(input);
@@ -308,7 +309,7 @@ export class AgentService {
 
       show_candidates: tool({
         description:
-          'Displays a table of candidates for a job as an interactive candidate_table card in browse mode (sorted by score descending with direct per-row Accept/Reject actions). Use this whenever the recruiter asks to see, view, or show candidates.',
+          'Displays a table of candidates for a job as an interactive candidate_table card in browse mode (sorted by score descending with direct per-row Accept/Reject actions). Use directly whenever the recruiter asks to see, view, or show candidates (e.g. "show me the candidates"). jobId is optional.',
         inputSchema: showCandidatesInputSchema,
         execute: async (input: z.infer<typeof showCandidatesInputSchema>) => {
           const res = await executeShowCandidates(input);
@@ -340,7 +341,7 @@ export class AgentService {
 
       propose_campaign: tool({
         description:
-          'Proposes an outreach email campaign for Accepted candidates of a job. Returns an interactive campaign_preview card with editable subject and body templates. Use this when the user asks to start/propose an outreach campaign, draft emails, or reach out to candidates.',
+          'Proposes an outreach email campaign for Accepted candidates of a job. Returns an interactive campaign_preview card with editable subject and body templates. Use directly when the user asks to start/propose an outreach campaign, draft emails, or reach out to candidates (e.g. "create an outreach campaign for accepted candidates"). jobId is optional.',
         inputSchema: proposeCampaignInputSchema,
         execute: async (input: z.infer<typeof proposeCampaignInputSchema>) => {
           console.log('[AgentService] propose_campaign execute called with input:', input);
@@ -366,7 +367,7 @@ export class AgentService {
       }),
 
       pause_campaign: tool({
-        description: 'Proposes pausing an active outreach campaign. Suspends all scheduled follow-up steps.',
+        description: 'Proposes pausing an active outreach campaign (e.g. "pause the campaign"). Suspends all scheduled follow-up steps. jobId is optional.',
         inputSchema: pauseCampaignInputSchema,
         execute: async (input: z.infer<typeof pauseCampaignInputSchema>) => {
           const res = await executePauseCampaign(input, conversationId);
@@ -465,7 +466,7 @@ export class AgentService {
 
       update_candidate_status: tool({
         description:
-          'Proposes advancing or updating a candidate status in the recruitment pipeline (e.g. Interviewed, Shortlisted, Hired, Rejected). Returns an interactive status_update card.',
+          'Proposes advancing or updating a candidate status in the recruitment pipeline (e.g. "mark Maya Sterling as hired", "advance John to Interviewed"). Accepts candidateName directly (or candidateId) and newStatus. Returns an interactive status_update card.',
         inputSchema: updateCandidateStatusInputSchema,
         execute: async (input: z.infer<typeof updateCandidateStatusInputSchema>) => {
           const res = await executeUpdateCandidateStatus(input, conversationId);
@@ -490,7 +491,7 @@ export class AgentService {
 
       get_job_stats: tool({
         description:
-          'Retrieves live pipeline statistics, funnel metrics, reply/interested conversion rates, and token/cost summary for a job. Returns an interactive stats_summary card. Use when the recruiter asks about recruiting progress, status, metrics, or "how is the job going?".',
+          'Retrieves live pipeline statistics, funnel metrics, reply/interested conversion rates, and token/cost summary for a job. Accepts jobTitle (e.g. "React") or jobId. Returns an interactive stats_summary card. Use directly when the recruiter asks about recruiting progress, status, metrics, or "how is the React job going?".',
         inputSchema: getJobStatsInputSchema,
         execute: async (input: z.infer<typeof getJobStatsInputSchema>) => {
           const res = await executeGetJobStats(input, conversationId);
