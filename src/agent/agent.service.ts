@@ -62,6 +62,28 @@ import {
   executeGetJobStats,
 } from './tools/get-job-stats.tool';
 
+export const REGISTERED_TOOL_NAMES = [
+  'parse_and_propose_job',
+  'request_candidate_sourcing',
+  'propose_candidate_review',
+  'confirm_action',
+  'cancel_action',
+  'list_jobs',
+  'get_job',
+  'find_candidates',
+  'show_candidates',
+  'get_campaign',
+  'propose_campaign',
+  'pause_campaign',
+  'resume_campaign',
+  'send_booking_link',
+  'propose_reply_draft',
+  'update_candidate_status',
+  'get_job_stats',
+] as const;
+
+export type RegisteredToolName = typeof REGISTERED_TOOL_NAMES[number];
+
 export async function executeWithRetry<T>(
   fn: (modelName: string) => Promise<T>,
   primaryModel: string,

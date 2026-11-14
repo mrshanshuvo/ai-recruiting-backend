@@ -10,7 +10,8 @@
     "dev:api": "tsx watch src/index.api.ts",
     "dev:worker": "tsx watch src/index.worker.ts",
     "test": "vitest run --exclude '**/*.live.test.ts'",
-    "test:live": "vitest run src/__tests__/prompt-injection.live.test.ts"
+    "test:live": "vitest run src/__tests__/prompt-injection.live.test.ts",
+    "preflight": "bash scripts/preflight.sh"
   },
   "dependencies": {
     "@ai-sdk/google": "4.0.120",

@@ -24,6 +24,22 @@ Run all backend services (`mongo`, `redis`, `api`, `worker`) inside Docker:
 docker compose up --build
 ```
 
+### System Preflight Check
+Before running tests, recording demos, or starting services, verify all infrastructure and configuration dependencies:
+```bash
+npm run preflight
+# or
+bash scripts/preflight.sh
+```
+The script validates 7 operational checks:
+1. API health endpoint responsiveness (`http://localhost:4000/health`)
+2. Background BullMQ queue worker running (`recruiting_worker` container or local process)
+3. Redis connectivity (`PONG`)
+4. MongoDB connectivity (`adminCommand ping`)
+5. `GEMINI_API_KEY` configured and present
+6. Configured LLM model availability in Google Gemini `ListModels` API
+7. Ethereal mail DNS resolution
+
 ### Configuration & LLM Models
 Copy `.env.example` to `.env` and set your `GEMINI_API_KEY`:
 ```bash
