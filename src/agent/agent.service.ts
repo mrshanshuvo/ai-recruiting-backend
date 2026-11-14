@@ -634,7 +634,15 @@ export class AgentService {
     } catch (error) {
       console.error('[AgentService.runTurn Error]', error);
       const rawErrorMsg = (error as any)?.message || String(error);
-      const errorMessage = `AI Error: ${rawErrorMsg}`;
+      const isRateLimit =
+        rawErrorMsg.includes('429') ||
+        rawErrorMsg.includes('RESOURCE_EXHAUSTED') ||
+        rawErrorMsg.includes('quota') ||
+        rawErrorMsg.toLowerCase().includes('rate limit');
+
+      const errorMessage = isRateLimit
+        ? 'AI service is temporarily rate-limited. Please retry your request in a few moments.'
+        : `AI Error: ${rawErrorMsg}`;
 
       parts.unshift({
         type: 'text',

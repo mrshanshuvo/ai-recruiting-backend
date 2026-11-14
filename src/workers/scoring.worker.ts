@@ -200,24 +200,35 @@ export async function processScoringJob(
   }
 
   try {
-    const scoreResult = await scorer(
-      {
-        title: dbJob.title,
-        mustHaveSkills: dbJob.mustHaveSkills,
-        niceToHaveSkills: dbJob.niceToHaveSkills,
-        seniority: dbJob.seniority,
-        location: dbJob.location,
-        remotePolicy: dbJob.remotePolicy,
-      },
-      {
-        fullName: candidate.fullName,
-        currentTitle: candidate.currentTitle,
-        currentCompany: candidate.currentCompany,
-        skills: candidate.skills,
-        summary: candidate.scoreReason,
-      },
-      conversationId
-    );
+    const timeoutMs = 30000;
+    let timer: NodeJS.Timeout | null = null;
+    const timeoutPromise = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`Scoring timed out after ${timeoutMs}ms`)), timeoutMs);
+    });
+
+    const scoreResult = (await Promise.race([
+      scorer(
+        {
+          title: dbJob.title,
+          mustHaveSkills: dbJob.mustHaveSkills,
+          niceToHaveSkills: dbJob.niceToHaveSkills,
+          seniority: dbJob.seniority,
+          location: dbJob.location,
+          remotePolicy: dbJob.remotePolicy,
+        },
+        {
+          fullName: candidate.fullName,
+          currentTitle: candidate.currentTitle,
+          currentCompany: candidate.currentCompany,
+          skills: candidate.skills,
+          summary: candidate.scoreReason,
+        },
+        conversationId
+      ),
+      timeoutPromise,
+    ])) as any;
+
+    if (timer) clearTimeout(timer);
 
     candidate.score = scoreResult.score;
     candidate.scoreReason = scoreResult.reason;

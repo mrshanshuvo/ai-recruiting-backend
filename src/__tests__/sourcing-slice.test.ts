@@ -2,9 +2,10 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } 
 import mongoose from 'mongoose';
 import pLimit from 'p-limit';
 import { normalizeEmail, normalizeProfileUrl } from '../utils/normalizer';
-import { Candidate, Job } from '../models';
+import { Candidate, Job, Conversation } from '../models';
 import { CandidateService } from '../services/candidate.service';
 import { processScoringJob } from '../workers/scoring.worker';
+import { executeRequestCandidateSourcing } from '../agent/tools/request-candidate-sourcing.tool';
 import { env } from '../config/env';
 
 describe('B8: Checkpoint 4 Sourcing Slice Unit & Integration Tests', () => {
@@ -304,6 +305,99 @@ Jordan Lee,,https://linkedin.com/in/jordanlee,Frontend Engineer`;
 
       await Candidate.findByIdAndDelete(candidate._id);
       await Job.findByIdAndDelete(job._id);
+    });
+
+    it('scoring job that hangs/times out resolves candidate to failed status', async () => {
+      const job = await Job.create({
+        title: 'Timeout Guard SRE',
+        department: 'Infrastructure',
+        status: 'OPEN',
+      });
+
+      const candidate = await Candidate.create({
+        jobId: job._id,
+        fullName: 'Hanging Scorer Candidate',
+        emailStatus: 'missing',
+        source: 'search',
+        sourceMode: 'fixture',
+        scoreStatus: 'pending',
+        status: 'Sourced',
+      });
+
+      // Scorer mock that never resolves (or throws timeout)
+      const hangingScorer = vi.fn().mockImplementation(() => {
+        return new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Scoring timed out after 30000ms')), 50);
+        });
+      });
+
+      await processScoringJob(
+        {
+          jobId: job._id.toString(),
+          candidateId: candidate._id.toString(),
+          conversationId: '',
+        },
+        hangingScorer
+      );
+
+      const updated = await Candidate.findById(candidate._id);
+      expect(updated!.scoreStatus).toBe('failed');
+      expect(updated!.score).toBeNull();
+      expect(updated!.scoreReason).toContain('could not score: Scoring timed out');
+
+      await Candidate.findByIdAndDelete(candidate._id);
+      await Job.findByIdAndDelete(job._id);
+    });
+  });
+
+  describe('5. Safe Contextual jobId Resolution in Sourcing Tool (C3 c)', () => {
+    it('resolves job A in conversation A and job B in conversation B without silently picking latest', async () => {
+      const jobA = await Job.create({
+        title: 'Backend Systems Engineer (Job A)',
+        department: 'Core',
+        status: 'OPEN',
+      });
+
+      const jobB = await Job.create({
+        title: 'Frontend React Specialist (Job B)',
+        department: 'UI',
+        status: 'OPEN',
+      });
+
+      const convA = await Conversation.create({
+        title: 'Thread A',
+        jobId: jobA._id,
+      });
+
+      const convB = await Conversation.create({
+        title: 'Thread B',
+        jobId: jobB._id,
+      });
+
+      // In conversation A: "source candidates for it" (no jobId passed)
+      const resA = await executeRequestCandidateSourcing({ targetCount: 5 }, convA._id.toString());
+      expect(resA.success).toBe(true);
+      expect(resA.card?.payload.jobId).toBe(jobA._id.toString());
+      expect(resA.card?.payload.jobTitle).toBe(jobA.title);
+
+      // In conversation B: "source candidates for it" (no jobId passed)
+      const resB = await executeRequestCandidateSourcing({ targetCount: 5 }, convB._id.toString());
+      expect(resB.success).toBe(true);
+      expect(resB.card?.payload.jobId).toBe(jobB._id.toString());
+      expect(resB.card?.payload.jobTitle).toBe(jobB.title);
+
+      // In an unlinked conversation when multiple jobs exist: asks which one instead of silently picking latest
+      const convUnlinked = await Conversation.create({
+        title: 'Thread Unlinked',
+      });
+      const resUnlinked = await executeRequestCandidateSourcing({ targetCount: 5 }, convUnlinked._id.toString());
+      expect(resUnlinked.success).toBe(false);
+      expect(resUnlinked.error).toContain('There are multiple active jobs');
+      expect(resUnlinked.error).toContain('Which job would you like to source candidates for?');
+
+      // Cleanup
+      await Conversation.deleteMany({ _id: { $in: [convA._id, convB._id, convUnlinked._id] } });
+      await Job.deleteMany({ _id: { $in: [jobA._id, jobB._id] } });
     });
   });
 });

@@ -1,13 +1,13 @@
 import mongoose from 'mongoose';
 import { z } from 'zod';
-import { Job } from '../../models';
+import { Job, Conversation } from '../../models';
 import { PendingActionService } from '../../services/pending-action.service';
 
 export const requestCandidateSourcingInputSchema = z.object({
   jobId: z
     .string()
     .optional()
-    .describe('The MongoDB ObjectId of the job to source candidates for. If omitted, the active or most recent job is automatically used.'),
+    .describe('The MongoDB ObjectId of the job to source candidates for. If omitted, resolved safely from the active conversation context.'),
   targetCount: z
     .number()
     .int()
@@ -67,14 +67,48 @@ export async function executeRequestCandidateSourcing(
   input: z.infer<typeof requestCandidateSourcingInputSchema>,
   conversationId: string
 ) {
-  let job = null;
+  let job: any = null;
+
+  // 1. Explicit jobId if provided
   if (input.jobId && mongoose.Types.ObjectId.isValid(input.jobId)) {
     job = await Job.findById(input.jobId);
   }
-  if (!job) {
-    job = await Job.findOne({ status: 'OPEN' }).sort({ createdAt: -1 });
+
+  // 2. Safe resolution from conversation context
+  if (!job && conversationId) {
+    if (mongoose.Types.ObjectId.isValid(conversationId)) {
+      const conv = await Conversation.findById(conversationId).lean();
+      if (conv?.jobId) {
+        job = await Job.findById(conv.jobId);
+      }
+    }
     if (!job) {
-      job = await Job.findOne().sort({ createdAt: -1 });
+      job = await Job.findOne({ conversationId });
+    }
+  }
+
+  // 3. Fallback: only pick if unambiguous (exactly 1 job exists)
+  if (!job) {
+    const openJobs = await Job.find({ status: 'OPEN' }).lean();
+    if (openJobs.length === 1) {
+      job = openJobs[0];
+    } else if (openJobs.length > 1) {
+      const titles = openJobs.map((j) => `"${j.title}" (ID: ${j._id})`).join(', ');
+      return {
+        success: false,
+        error: `There are multiple active jobs (${titles}). Which job would you like to source candidates for? Please specify the job title or ID.`,
+      };
+    } else {
+      const allJobs = await Job.find().lean();
+      if (allJobs.length === 1) {
+        job = allJobs[0];
+      } else if (allJobs.length > 1) {
+        const titles = allJobs.map((j) => `"${j.title}" (ID: ${j._id})`).join(', ');
+        return {
+          success: false,
+          error: `There are multiple jobs (${titles}). Which job would you like to source candidates for? Please specify the job title or ID.`,
+        };
+      }
     }
   }
 
@@ -83,6 +117,11 @@ export async function executeRequestCandidateSourcing(
       success: false,
       error: `No job found. Please create or specify a job before sourcing candidates.`,
     };
+  }
+
+  // Associate conversation with this job if not already set
+  if (conversationId && mongoose.Types.ObjectId.isValid(conversationId)) {
+    await Conversation.findByIdAndUpdate(conversationId, { jobId: job._id });
   }
 
   const targetCount = input.targetCount || 10;

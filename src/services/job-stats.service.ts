@@ -29,15 +29,7 @@ export const ALL_PIPELINE_STATUSES = [
 export interface JobStatsResponse {
   jobId: string;
   jobTitle: string;
-  totals: {
-    totalCandidates: number;
-    contacted: number;
-    replied: number;
-    interested: number;
-    meetings: number;
-    hires: number;
-  };
-  everReachedTotals: {
+  everReached: {
     totalCandidates: number;
     contacted: number;
     replied: number;
@@ -51,7 +43,6 @@ export interface JobStatsResponse {
     interestedRate: number | string;
     interestedRateFormatted: string;
   };
-  funnel: Record<string, number>;
   currentStatusCounts: Record<string, number>;
   sourceBreakdown: {
     fixture: number;
@@ -383,7 +374,7 @@ export class JobStatsService {
       byCaller[k].estimatedCostUsd = Number(byCaller[k].estimatedCostUsd.toFixed(6));
     }
 
-    const everReachedTotals = {
+    const everReached = {
       totalCandidates,
       contacted: contactedCount,
       replied: repliedCount,
@@ -396,15 +387,13 @@ export class JobStatsService {
     return {
       jobId: jobObjectId.toString(),
       jobTitle: job.title,
-      totals: everReachedTotals,
-      everReachedTotals,
+      everReached,
       rates: {
         replyRate,
         replyRateFormatted,
         interestedRate,
         interestedRateFormatted,
       },
-      funnel: currentStatusCounts,
       currentStatusCounts,
       sourceBreakdown,
       campaignSummary: {

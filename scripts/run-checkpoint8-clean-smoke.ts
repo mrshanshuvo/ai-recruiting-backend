@@ -138,7 +138,7 @@ Nice-to-Have Requirements:
     const action = await PendingActionService.createAction({
       conversationId,
       jobId,
-      actionType: 'REQUEST_CANDIDATE_SOURCING',
+      actionType: 'START_SOURCING',
       payload: {
         jobId,
         targetCount: 10,
@@ -185,9 +185,9 @@ Nice-to-Have Requirements:
   const uploadData = await uploadRes.json();
   console.log('CSV Upload API Response:', JSON.stringify(uploadData, null, 2));
 
-  // Poll for CSV candidates scoring
+  // Poll for CSV candidates scoring (fail loudly if pending after 3 minutes)
   let allCandidates: any[] = [];
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 90; i++) {
     await new Promise((r) => setTimeout(r, 2000));
     const cRes = await fetch(`${API_BASE}/api/jobs/${jobId}/candidates`);
     const cData = await cRes.json();
@@ -196,6 +196,12 @@ Nice-to-Have Requirements:
     const scoredOrFailed = allCandidates.filter((c: any) => c.scoreStatus === 'scored' || c.scoreStatus === 'failed').length;
     console.log(`Total Candidates Poll ${i + 1}: ${allCandidates.length} total, ${scored} scored, ${scoredOrFailed} finished`);
     if (allCandidates.length >= 20 && scoredOrFailed >= allCandidates.length) break;
+  }
+
+  const pendingScoring = allCandidates.filter((c: any) => c.scoreStatus === 'pending');
+  if (pendingScoring.length > 0 || allCandidates.length < 20) {
+    console.error(`FATAL: Scoring timed out after 3 minutes! ${pendingScoring.length} candidates still pending scoring out of ${allCandidates.length}. Candidates:`, pendingScoring.map((c: any) => c.fullName));
+    process.exit(1);
   }
 
   // STEP 5: Interactive Candidate Review (Accept Candidates)
@@ -295,11 +301,12 @@ Nice-to-Have Requirements:
   // STEP 8: Simulate All 5 Inbound Reply Classes (F5 / Checkpoint 8)
   console.log('\n--- Step 8: Live Inbound Reply Triage (All 5 Classes) ---');
 
-  // Helper to poll for background worker completion
+  // Helper to poll for background worker completion (ensures candidate status and Reply record are both committed)
   async function pollForWorkerReply(candidateId: string, expectedStatus: string, actionType?: string) {
     for (let i = 0; i < 60; i++) {
       const cand = await Candidate.findById(candidateId).lean();
-      if (cand && cand.status === expectedStatus) {
+      const reply = await Reply.findOne({ candidateId }).sort({ createdAt: -1 }).lean();
+      if (cand && cand.status === expectedStatus && reply) {
         let action = null;
         if (actionType) {
           action = await PendingAction.findOne({
@@ -307,14 +314,15 @@ Nice-to-Have Requirements:
             actionType,
             status: 'PENDING',
           }).sort({ createdAt: -1 });
-          if (action) return { cand, action };
+          if (action) return { cand, action, reply };
         } else {
-          return { cand, action: null };
+          return { cand, action: null, reply };
         }
       }
       await new Promise((r) => setTimeout(r, 500));
     }
     const cand = await Candidate.findById(candidateId).lean();
+    const reply = await Reply.findOne({ candidateId }).sort({ createdAt: -1 }).lean();
     const action = actionType
       ? await PendingAction.findOne({
           'payload.candidateId': candidateId.toString(),
@@ -322,7 +330,7 @@ Nice-to-Have Requirements:
           status: 'PENDING',
         }).sort({ createdAt: -1 })
       : null;
-    return { cand, action };
+    return { cand, action, reply };
   }
 
   // Class 1: Wants a meeting (Sarah Chen)
@@ -631,13 +639,14 @@ Nice-to-Have Requirements:
 
   const totalCandidatesCount = await Candidate.countDocuments({ jobId: jobObjectId });
   const statsObj = statsData.stats || statsData;
+  const everReached = statsObj.everReached || statsObj.totals || {};
   const comparisonRows = [
-    { name: 'Total Candidates', api: statsObj.totals.totalCandidates, raw: totalCandidatesCount },
-    { name: 'Ever Contacted (contactedAt)', api: statsObj.totals.contacted, raw: rawContacted },
-    { name: 'Ever Replied (distinct candidate)', api: statsObj.totals.replied, raw: rawEverReplied },
-    { name: 'Ever Interested (distinct candidate)', api: statsObj.totals.interested, raw: rawEverInterested },
-    { name: 'Meetings (distinct booked in log)', api: statsObj.totals.meetings, raw: rawMeetings },
-    { name: 'Hires (status Hired)', api: statsObj.totals.hires, raw: rawHires },
+    { name: 'Total Candidates', api: everReached.totalCandidates, raw: totalCandidatesCount },
+    { name: 'Ever Contacted (contactedAt)', api: everReached.contacted, raw: rawContacted },
+    { name: 'Ever Replied (distinct candidate)', api: everReached.replied, raw: rawEverReplied },
+    { name: 'Ever Interested (distinct candidate)', api: everReached.interested, raw: rawEverInterested },
+    { name: 'Meetings (distinct booked in log)', api: everReached.meetings, raw: rawMeetings },
+    { name: 'Hires (status Hired)', api: everReached.hires, raw: rawHires },
     { name: 'Cancelled Messages (outreach)', api: statsObj.campaignSummary.cancelledMessages, raw: await OutreachMessage.countDocuments({ jobId: jobObjectId, status: 'CANCELLED' }) },
     { name: 'Sent Messages (outreach)', api: statsObj.campaignSummary.sentMessages, raw: await OutreachMessage.countDocuments({ jobId: jobObjectId, status: 'SENT' }) },
     { name: 'Prompt Tokens', api: statsObj.tokenUsage.totalPromptTokens, raw: rawPromptTokens },

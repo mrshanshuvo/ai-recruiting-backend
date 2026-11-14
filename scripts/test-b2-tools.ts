@@ -4,23 +4,23 @@ dotenv.config();
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { generateText, tool } from 'ai';
 import { z } from 'zod';
-import { SYSTEM_PROMPT } from '../agent/system-prompt';
-import { env } from '../config/env';
+import { SYSTEM_PROMPT } from '../src/agent/system-prompt';
+import { env } from '../src/config/env';
 
 // Schemas
-import { parseAndProposeJobInputSchema } from '../agent/tools/parse-and-propose-job.tool';
-import { requestCandidateSourcingInputSchema } from '../agent/tools/request-candidate-sourcing.tool';
-import { proposeCandidateReviewInputSchema } from '../agent/tools/propose-candidate-review.tool';
-import { confirmActionInputSchema } from '../agent/tools/confirm-action.tool';
-import { cancelActionInputSchema } from '../agent/tools/cancel-action.tool';
-import { listJobsInputSchema, getJobInputSchema, findCandidatesInputSchema } from '../agent/tools/job-tools';
-import { showCandidatesInputSchema } from '../agent/tools/show-candidates.tool';
-import { getCampaignInputSchema, proposeCampaignInputSchema } from '../agent/tools/propose-campaign.tool';
-import { pauseCampaignInputSchema, resumeCampaignInputSchema } from '../agent/tools/campaign-lifecycle.tool';
-import { sendBookingLinkInputSchema } from '../agent/tools/booking-link.tool';
-import { proposeReplyDraftInputSchema } from '../agent/tools/propose-reply-draft.tool';
-import { updateCandidateStatusInputSchema } from '../agent/tools/update-candidate-status.tool';
-import { getJobStatsInputSchema } from '../agent/tools/get-job-stats.tool';
+import { parseAndProposeJobInputSchema } from '../src/agent/tools/parse-and-propose-job.tool';
+import { requestCandidateSourcingInputSchema } from '../src/agent/tools/request-candidate-sourcing.tool';
+import { proposeCandidateReviewInputSchema } from '../src/agent/tools/propose-candidate-review.tool';
+import { confirmActionInputSchema } from '../src/agent/tools/confirm-action.tool';
+import { cancelActionInputSchema } from '../src/agent/tools/cancel-action.tool';
+import { listJobsInputSchema, getJobInputSchema, findCandidatesInputSchema } from '../src/agent/tools/job-tools';
+import { showCandidatesInputSchema } from '../src/agent/tools/show-candidates.tool';
+import { getCampaignInputSchema, proposeCampaignInputSchema } from '../src/agent/tools/propose-campaign.tool';
+import { pauseCampaignInputSchema, resumeCampaignInputSchema } from '../src/agent/tools/campaign-lifecycle.tool';
+import { sendBookingLinkInputSchema } from '../src/agent/tools/booking-link.tool';
+import { proposeReplyDraftInputSchema } from '../src/agent/tools/propose-reply-draft.tool';
+import { updateCandidateStatusInputSchema } from '../src/agent/tools/update-candidate-status.tool';
+import { getJobStatsInputSchema } from '../src/agent/tools/get-job-stats.tool';
 
 const tools = {
   parse_and_propose_job: tool({
@@ -112,7 +112,7 @@ const tools = {
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function testSentence(sentence: string, expectedTools: string[]): Promise<{ calledTool: string; ok: boolean }> {
+async function testSentence(sentence: string, expectedTools: string[]): Promise<{ calledTool: string; args: any; ok: boolean }> {
   const google = createGoogleGenerativeAI({
     apiKey: env.GEMINI_API_KEY,
   });
@@ -124,13 +124,16 @@ async function testSentence(sentence: string, expectedTools: string[]): Promise<
     tools: tools as any,
   });
 
-  const calledTool = response.toolCalls?.[0]?.toolName || 'none';
+  const firstCall = response.toolCalls?.[0];
+  const calledTool = firstCall?.toolName || 'none';
+  const args = firstCall?.args || {};
   const ok = expectedTools.includes(calledTool);
-  return { calledTool, ok };
+  return { calledTool, args, ok };
 }
 
 async function run() {
   console.log(`Testing tool selection with model: ${env.LLM_MODEL}`);
+  console.log('Script path: apps/backend/scripts/test-b2-tools.ts');
   console.log('----------------------------------------------------------------------');
 
   const testCases: Array<{ sentence: string; expected: string[]; count: number }> = [
@@ -143,14 +146,15 @@ async function run() {
     { sentence: 'pause the campaign', expected: ['pause_campaign'], count: 3 },
   ];
 
-  console.log('| Sentence | Expected Tool | Called Tool | OK |');
+  console.log('| Sentence | Expected Tool | Called Tool (with arguments) | OK |');
   console.log('|---|---|---|---|');
 
   for (const tc of testCases) {
     for (let i = 1; i <= tc.count; i++) {
       try {
         const res = await testSentence(tc.sentence, tc.expected);
-        console.log(`| "${tc.sentence}" (run ${i}/${tc.count}) | ${tc.expected.join(' or ')} | ${res.calledTool} | ${res.ok ? 'OK' : 'FAIL'} |`);
+        const argsStr = JSON.stringify(res.args);
+        console.log(`| "${tc.sentence}" (run ${i}/${tc.count}) | ${tc.expected.join(' or ')} | ${res.calledTool} args: ${argsStr} | ${res.ok ? 'OK' : 'FAIL'} |`);
       } catch (err: any) {
         console.log(`| "${tc.sentence}" (run ${i}/${tc.count}) | ${tc.expected.join(' or ')} | ERROR: ${err.message} | FAIL |`);
       }

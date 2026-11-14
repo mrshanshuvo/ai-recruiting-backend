@@ -56,17 +56,15 @@ export async function executeGetJobStats(
         payload: {
           jobId: stats.jobId,
           jobTitle: stats.jobTitle,
-          totals: stats.totals,
-          everReachedTotals: stats.everReachedTotals,
+          everReached: stats.everReached,
           rates: stats.rates,
-          funnel: stats.funnel,
           currentStatusCounts: stats.currentStatusCounts,
           sourceBreakdown: stats.sourceBreakdown,
           campaignSummary: stats.campaignSummary,
           tokenUsage: stats.tokenUsage,
         },
       },
-      message: `Here is the current recruiting status for "${stats.jobTitle}": ${stats.totals.totalCandidates} candidates sourced, ${stats.totals.contacted} contacted, ${stats.totals.replied} replied (${stats.rates.replyRateFormatted}), ${stats.totals.interested} interested (${stats.rates.interestedRateFormatted}), ${stats.totals.meetings} meetings booked, and ${stats.totals.hires} hires.`,
+      message: `Here is the current recruiting status for "${stats.jobTitle}": ${stats.everReached.totalCandidates} candidates sourced, ${stats.everReached.contacted} contacted, ${stats.everReached.replied} replied (${stats.rates.replyRateFormatted}), ${stats.everReached.interested} interested (${stats.rates.interestedRateFormatted}), ${stats.everReached.meetings} meetings booked, and ${stats.everReached.hires} hires.`,
     };
   } catch (err: any) {
     return {

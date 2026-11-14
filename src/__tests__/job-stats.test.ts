@@ -59,9 +59,12 @@ describe('Checkpoint 9: Recruiting Pipeline Metrics, Funnel Dashboard & Stats To
 
       const stats = await JobStatsService.getJobStats(job._id);
 
-      expect(stats.totals.totalCandidates).toBe(12);
+      expect(stats.everReached.totalCandidates).toBe(12);
+      expect((stats as any).totals).toBeUndefined();
+      expect((stats as any).everReachedTotals).toBeUndefined();
+      expect((stats as any).funnel).toBeUndefined();
       for (const st of ALL_PIPELINE_STATUSES) {
-        expect(stats.funnel[st]).toBe(1);
+        expect(stats.currentStatusCounts[st]).toBe(1);
       }
     });
 
@@ -124,13 +127,13 @@ describe('Checkpoint 9: Recruiting Pipeline Metrics, Funnel Dashboard & Stats To
       const stats = await JobStatsService.getJobStats(job._id);
 
       // Contacted = 4
-      expect(stats.totals.contacted).toBe(4);
+      expect(stats.everReached.contacted).toBe(4);
       // Replied = 3 (Replied, Interested, Meeting booked)
-      expect(stats.totals.replied).toBe(3);
+      expect(stats.everReached.replied).toBe(3);
       // Interested = 2 (Interested, Meeting booked)
-      expect(stats.totals.interested).toBe(2);
+      expect(stats.everReached.interested).toBe(2);
       // Meetings = 1
-      expect(stats.totals.meetings).toBe(1);
+      expect(stats.everReached.meetings).toBe(1);
 
       // Rates: replyRate = 3/4 = 0.75 (75.0%), interestedRate = 2/4 = 0.5 (50.0%)
       expect(stats.rates.replyRate).toBe(0.75);
@@ -162,8 +165,8 @@ describe('Checkpoint 9: Recruiting Pipeline Metrics, Funnel Dashboard & Stats To
 
       const stats = await JobStatsService.getJobStats(job._id);
 
-      expect(stats.totals.totalCandidates).toBe(1);
-      expect(stats.totals.contacted).toBe(0);
+      expect(stats.everReached.totalCandidates).toBe(1);
+      expect(stats.everReached.contacted).toBe(0);
       expect(stats.rates.replyRate).toBe('n/a');
       expect(stats.rates.replyRateFormatted).toBe('n/a');
       expect(stats.rates.interestedRate).toBe('n/a');
@@ -222,10 +225,10 @@ describe('Checkpoint 9: Recruiting Pipeline Metrics, Funnel Dashboard & Stats To
 
       const stats = await JobStatsService.getJobStats(job._id);
 
-      expect(stats.totals.contacted).toBe(1);
-      expect(stats.totals.replied).toBe(1);
-      expect(stats.totals.interested).toBe(1);
-      expect(stats.totals.hires).toBe(1);
+      expect(stats.everReached.contacted).toBe(1);
+      expect(stats.everReached.replied).toBe(1);
+      expect(stats.everReached.interested).toBe(1);
+      expect(stats.everReached.hires).toBe(1);
       expect(stats.rates.replyRateFormatted).toBe('100.0%');
       expect(stats.rates.interestedRateFormatted).toBe('100.0%');
     });
@@ -261,9 +264,9 @@ describe('Checkpoint 9: Recruiting Pipeline Metrics, Funnel Dashboard & Stats To
 
       const stats = await JobStatsService.getJobStats(job._id);
 
-      expect(stats.totals.contacted).toBe(1);
-      expect(stats.totals.replied).toBe(1);
-      expect(stats.funnel['Unsubscribed']).toBe(1);
+      expect(stats.everReached.contacted).toBe(1);
+      expect(stats.everReached.replied).toBe(1);
+      expect(stats.currentStatusCounts['Unsubscribed']).toBe(1);
       expect(stats.rates.replyRateFormatted).toBe('100.0%');
     });
   });
@@ -423,7 +426,11 @@ describe('Checkpoint 9: Recruiting Pipeline Metrics, Funnel Dashboard & Stats To
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.stats.jobId).toBe(job._id.toString());
-      expect(res.body.stats.funnel.Sourced).toBe(0);
+      expect(res.body.stats.totals).toBeUndefined();
+      expect(res.body.stats.everReachedTotals).toBeUndefined();
+      expect(res.body.stats.funnel).toBeUndefined();
+      expect(res.body.stats.currentStatusCounts.Sourced).toBe(0);
+      expect(res.body.stats.everReached.totalCandidates).toBe(0);
       expect(res.body.stats.rates.replyRateFormatted).toBe('n/a');
     });
 
@@ -467,8 +474,8 @@ describe('Checkpoint 9: Recruiting Pipeline Metrics, Funnel Dashboard & Stats To
       expect(result.success).toBe(true);
       expect(result.card?.cardType).toBe('stats_summary');
       expect(result.card?.payload.jobTitle).toBe('TestStatsJob Tool Integration');
-      expect(result.card?.payload.totals.totalCandidates).toBe(1);
-      expect(result.card?.payload.totals.contacted).toBe(1);
+      expect(result.card?.payload.everReached.totalCandidates).toBe(1);
+      expect(result.card?.payload.everReached.contacted).toBe(1);
       expect(result.message).toContain('1 candidates sourced');
     });
   });
