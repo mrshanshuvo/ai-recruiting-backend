@@ -71,32 +71,47 @@ CRITICAL: Do NOT invent or hallucinate any skills, salary, location, or seniorit
 ${text}
 </job_description>`;
 
-  const result = await generateObject({
-    model: google(env.LLM_MODEL),
-    schema: extractionSchema,
-    prompt,
-  });
+  const modelsToTry = Array.from(
+    new Set([env.LLM_MODEL, 'gemini-3.5-flash-lite', env.LLM_FALLBACK_MODEL].filter(Boolean))
+  ) as string[];
 
-  // Track token usage per ADR-0015 & requirement 4
-  if (result.usage) {
-    const usageAny = result.usage as any;
-    const promptTokens = usageAny.inputTokens ?? usageAny.promptTokens ?? 0;
-    const completionTokens = usageAny.outputTokens ?? usageAny.completionTokens ?? 0;
-    const totalTokens = usageAny.totalTokens ?? (promptTokens + completionTokens);
-    const cost = calculateEstimatedCostUsd(env.LLM_MODEL, promptTokens, completionTokens);
+  let lastError: unknown = null;
+  for (const modelName of modelsToTry) {
+    try {
+      const result = await generateObject({
+        model: google(modelName),
+        schema: extractionSchema,
+        prompt,
+      });
 
-    await TokenUsage.create({
-      conversationId: conversationId ? conversationId : undefined,
-      caller: 'agent',
-      model: env.LLM_MODEL,
-      promptTokens,
-      completionTokens,
-      totalTokens,
-      estimatedCostUsd: cost,
-      timestamp: new Date(),
-    });
+      // Track token usage per ADR-0015 & requirement 4
+      if (result.usage) {
+        const usageAny = result.usage as any;
+        const promptTokens = usageAny.inputTokens ?? usageAny.promptTokens ?? 0;
+        const completionTokens = usageAny.outputTokens ?? usageAny.completionTokens ?? 0;
+        const totalTokens = usageAny.totalTokens ?? (promptTokens + completionTokens);
+        const cost = calculateEstimatedCostUsd(modelName, promptTokens, completionTokens);
+
+        await TokenUsage.create({
+          conversationId: conversationId ? conversationId : undefined,
+          caller: 'agent',
+          model: modelName,
+          promptTokens,
+          completionTokens,
+          totalTokens,
+          estimatedCostUsd: cost,
+          timestamp: new Date(),
+        });
+      }
+
+      return result.object;
+    } catch (err: any) {
+      lastError = err;
+      const msg = String(err?.message || '');
+      console.warn(`[JobExtractor] Model ${modelName} extraction failed:`, msg);
+    }
   }
 
-  return result.object;
+  throw lastError;
 }
 

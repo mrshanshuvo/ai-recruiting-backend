@@ -417,11 +417,16 @@ Jordan Lee,,https://linkedin.com/in/jordanlee,Frontend Engineer`;
       expect(resMalformed.success).toBe(false);
       expect(resMalformed.error).toContain('was not found');
 
-      // 3. Missing jobId with unlinked conversation and no unlinked single job
-      // Create a second dummy job so ambiguous resolution triggers
-      const dummyJob = await Job.create({
+      // 3. Missing jobId with unlinked conversation and multiple jobs
+      // Create two dummy jobs so ambiguous resolution triggers
+      const dummyJob1 = await Job.create({
         title: 'Backend Engineer',
         rawDescription: 'Node.js',
+        status: 'OPEN',
+      });
+      const dummyJob2 = await Job.create({
+        title: 'DevOps Engineer',
+        rawDescription: 'Kubernetes',
         status: 'OPEN',
       });
       const resMissing = await executeRequestCandidateSourcing(
@@ -430,7 +435,7 @@ Jordan Lee,,https://linkedin.com/in/jordanlee,Frontend Engineer`;
       );
       expect(resMissing.success).toBe(false);
       expect(resMissing.error).toContain('Which job would you like to source candidates for?');
-      await Job.findByIdAndDelete(dummyJob._id);
+      await Job.deleteMany({ _id: { $in: [dummyJob1._id, dummyJob2._id] } });
     });
   });
 });

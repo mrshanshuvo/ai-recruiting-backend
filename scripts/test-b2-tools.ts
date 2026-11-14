@@ -121,29 +121,21 @@ async function testSentence(sentence: string, expectedTools: string[]): Promise<
   try {
     response = await generateText({
       model: google(env.LLM_MODEL),
+      maxRetries: 0,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: sentence }],
       tools: tools as any,
     });
   } catch (err: any) {
-    const isQuotaOrDemand =
-      err?.message?.includes('quota') ||
-      err?.message?.includes('429') ||
-      err?.message?.includes('503') ||
-      err?.message?.includes('high demand');
-
-    if (isQuotaOrDemand) {
-      const fallback = 'gemini-3.5-flash-lite';
-      // Fallback model execution
-      response = await generateText({
-        model: google(fallback),
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: sentence }],
-        tools: tools as any,
-      });
-    } else {
-      throw err;
-    }
+    const fallback = 'gemini-3.5-flash-lite';
+    // Fallback model execution
+    response = await generateText({
+      model: google(fallback),
+      maxRetries: 1,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: sentence }],
+      tools: tools as any,
+    });
   }
 
   const firstCall = response.toolCalls?.[0];
@@ -180,7 +172,7 @@ async function run() {
       } catch (err: any) {
         console.log(`| "${tc.sentence}" (run ${i}/${tc.count}) | ${tc.expected.join(' or ')} | ERROR: ${err.message} | FAIL |`);
       }
-      await delay(4500); // 4.5s delay to stay safely under 15 requests per minute Free Tier limit
+      await delay(1000); // 1s delay
     }
   }
   console.log('----------------------------------------------------------------------');

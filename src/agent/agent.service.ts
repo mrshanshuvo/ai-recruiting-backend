@@ -118,7 +118,12 @@ export async function executeWithRetry<T>(
         errorString.includes('quota') ||
         errorString.includes('RESOURCE_EXHAUSTED');
 
-      if (!isRetryable || attempt === maxRetries) {
+      const isDailyExhausted = errorString.includes('per day') || errorString.includes('daily');
+
+      if (isDailyExhausted || !isRetryable || attempt === maxRetries) {
+        if (isDailyExhausted) {
+          console.warn(`[AgentService] Primary model ${primaryModel} daily quota exhausted. Falling back immediately.`);
+        }
         break;
       }
 
@@ -142,7 +147,7 @@ export async function executeWithRetry<T>(
 
   // Fallback model chain if primary model failed
   const candidateFallbacks = Array.from(
-    new Set([fallbackModel?.trim(), 'gemini-3.5-flash-lite', 'gemini-2.5-flash-lite'].filter(Boolean))
+    new Set(['gemini-3.5-flash-lite', fallbackModel?.trim(), 'gemini-2.5-flash-lite'].filter(Boolean))
   ) as string[];
 
   for (const modelCandidate of candidateFallbacks) {
@@ -589,8 +594,13 @@ export class AgentService {
             });
           }
 
-          // Await result.response to surface any streaming or multi-step tool errors
+          // Await result.response and result.steps to ensure all tool executions complete
           await result.response;
+          try {
+            if ((result as any).steps) {
+              await (result as any).steps;
+            }
+          } catch (_) {}
 
           // Token usage accounting
           try {
