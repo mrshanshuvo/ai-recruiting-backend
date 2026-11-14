@@ -42,6 +42,7 @@ export interface ICandidate extends Document {
   status: CandidateStatus;
   statusBeforeUnsubscribe?: CandidateStatus;
   outreachStopped: boolean;
+  needsReview?: boolean;
   contactedAt?: Date;
   bookingToken?: string;
   offeredSlots?: string[];
@@ -94,6 +95,7 @@ const CandidateSchema = new Schema<ICandidate>(
     },
     statusBeforeUnsubscribe: { type: String, required: false },
     outreachStopped: { type: Boolean, default: false },
+    needsReview: { type: Boolean, default: false },
     contactedAt: { type: Date, required: false },
     bookingToken: { type: String, required: false },
     offeredSlots: { type: [String], default: [] },

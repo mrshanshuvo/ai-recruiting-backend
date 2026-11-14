@@ -1,6 +1,7 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 
 export type OutreachStatus = 'QUEUED' | 'SENT' | 'FAILED' | 'CANCELLED';
+export type OutreachCancellationReason = 'replied' | 'unsubscribed' | 'manual';
 export type EmailTransportType = 'ethereal' | 'smtp' | 'local';
 
 export interface IOutreachMessage extends Document {
@@ -15,6 +16,7 @@ export interface IOutreachMessage extends Document {
   body: string;
   personalOpening?: string;
   status: OutreachStatus;
+  cancellationReason?: OutreachCancellationReason;
   transport?: EmailTransportType;
   sentAt?: Date;
   previewUrl?: string;
@@ -37,6 +39,11 @@ const OutreachMessageSchema = new Schema<IOutreachMessage>(
       type: String,
       enum: ['QUEUED', 'SENT', 'FAILED', 'CANCELLED'],
       default: 'QUEUED',
+    },
+    cancellationReason: {
+      type: String,
+      enum: ['replied', 'unsubscribed', 'manual'],
+      required: false,
     },
     transport: {
       type: String,

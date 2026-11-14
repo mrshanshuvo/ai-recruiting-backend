@@ -11,6 +11,7 @@ import {
 } from '../models';
 import { executeProposeCampaign, generateCandidateOpening } from '../agent/tools/propose-campaign.tool';
 import { PendingActionService } from '../services/pending-action.service';
+import { CandidateStatusService } from '../services/candidate-status.service';
 import { processOutreachJob } from '../workers/outreach.worker';
 import { EmailTransportService } from '../services/email-transport.service';
 import { env } from '../config/env';
@@ -435,6 +436,301 @@ describe('Checkpoint 6 & Requirement 5: Outreach Campaign, Preview Gate & Sendin
       expect(result.status).toBe('RE_DELAYED_DAILY_LIMIT');
       expect(result.delayUntil).toBeDefined();
       expect(sendMailSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Template Placeholder Rendering & Outreach Cancellation', () => {
+    it('fails if any sent email (subject or body, any step) still contains "{{"', async () => {
+      const candidate = await Candidate.create({
+        jobId: testJobId,
+        fullName: 'Jordan Miller',
+        currentTitle: 'Senior Frontend Engineer',
+        currentCompany: 'WebFlow Co',
+        skills: ['React', 'TypeScript', 'GraphQL'],
+        email: 'jordan@example.com',
+        emailStatus: 'valid',
+        status: 'Accepted',
+        source: 'csv',
+        sourceMode: 'csv',
+      });
+
+      const campaign = await Campaign.create({
+        jobId: testJobId,
+        name: 'Placeholder Test Campaign',
+        status: 'ACTIVE',
+      });
+
+      const step0 = await CampaignStep.create({
+        campaignId: campaign._id,
+        stepIndex: 0,
+        delayDays: 0,
+        subjectTemplate: 'Hello {{firstName}}, role at {{companyName}}',
+        bodyTemplate: 'Hi {{firstName}},\n\n{{personalOpening}}Job: {{jobTitle}}\n\nBest,\nRecruiting',
+      });
+
+      const step1 = await CampaignStep.create({
+        campaignId: campaign._id,
+        stepIndex: 1,
+        delayDays: 3,
+        subjectTemplate: 'Following up {{firstName}} for {{jobTitle}}',
+        bodyTemplate: 'Hi {{firstName}},\n\nChecking in regarding {{jobTitle}} at {{companyName}}.\n\nBest,\nRecruiting',
+      });
+
+      vi.spyOn(EmailTransportService, 'sendMail').mockResolvedValue({
+        messageId: 'mock-placeholder-id',
+        previewUrl: 'https://ethereal.email/message/1',
+        transport: 'ethereal',
+      });
+
+      // Process step 0
+      const res0 = await processOutreachJob({
+        campaignId: campaign._id.toString(),
+        campaignStepId: step0._id.toString(),
+        candidateId: candidate._id.toString(),
+        jobId: testJobId.toString(),
+        stepIndex: 0,
+      });
+      expect(res0.status).toBe('SENT');
+
+      // Process step 1
+      const res1 = await processOutreachJob({
+        campaignId: campaign._id.toString(),
+        campaignStepId: step1._id.toString(),
+        candidateId: candidate._id.toString(),
+        jobId: testJobId.toString(),
+        stepIndex: 1,
+      });
+      expect(res1.status).toBe('SENT');
+
+      const sentMessages = await OutreachMessage.find({ candidateId: candidate._id, status: 'SENT' });
+      expect(sentMessages.length).toBe(2);
+
+      for (const msg of sentMessages) {
+        expect(msg.subject).not.toContain('{{');
+        expect(msg.subject).not.toContain('}}');
+        expect(msg.body).not.toContain('{{');
+        expect(msg.body).not.toContain('}}');
+        expect(msg.subject).toContain('Jordan');
+        expect(msg.body).toContain('Hi Jordan');
+      }
+    });
+
+    it('reply cancels unsent outreach messages with reason "replied"', async () => {
+      const candidate = await Candidate.create({
+        jobId: testJobId,
+        fullName: 'Alex Vance',
+        email: 'alex-vance@example.com',
+        emailStatus: 'valid',
+        status: 'Contacted',
+        source: 'csv',
+        sourceMode: 'csv',
+      });
+
+      const campaign = await Campaign.create({
+        jobId: testJobId,
+        name: 'Reply Cancel Test Campaign',
+        status: 'ACTIVE',
+      });
+
+      const step1 = await CampaignStep.create({
+        campaignId: campaign._id,
+        stepIndex: 1,
+        delayDays: 3,
+        subjectTemplate: 'Follow-up 1',
+        bodyTemplate: 'Body 1',
+      });
+
+      const step2 = await CampaignStep.create({
+        campaignId: campaign._id,
+        stepIndex: 2,
+        delayDays: 7,
+        subjectTemplate: 'Follow-up 2',
+        bodyTemplate: 'Body 2',
+      });
+
+      const msg1 = await OutreachMessage.create({
+        campaignId: campaign._id,
+        campaignStepId: step1._id,
+        stepIndex: 1,
+        candidateId: candidate._id,
+        jobId: testJobId,
+        toEmail: candidate.email,
+        subject: 'Follow-up 1',
+        body: 'Body 1',
+        status: 'QUEUED',
+      });
+
+      const msg2 = await OutreachMessage.create({
+        campaignId: campaign._id,
+        campaignStepId: step2._id,
+        stepIndex: 2,
+        candidateId: candidate._id,
+        jobId: testJobId,
+        toEmail: candidate.email,
+        subject: 'Follow-up 2',
+        body: 'Body 2',
+        status: 'QUEUED',
+      });
+
+      // Simulate inbound reply
+      candidate.outreachStopped = true;
+      await candidate.save();
+      await OutreachMessage.updateMany(
+        { candidateId: candidate._id, status: 'QUEUED' },
+        {
+          $set: {
+            status: 'CANCELLED',
+            cancellationReason: 'replied',
+            errorMessage: 'Outreach stopped due to candidate reply',
+          },
+        }
+      );
+
+      const updatedMsg1 = await OutreachMessage.findById(msg1._id);
+      const updatedMsg2 = await OutreachMessage.findById(msg2._id);
+
+      expect(updatedMsg1?.status).toBe('CANCELLED');
+      expect(updatedMsg1?.cancellationReason).toBe('replied');
+      expect(updatedMsg2?.status).toBe('CANCELLED');
+      expect(updatedMsg2?.cancellationReason).toBe('replied');
+    });
+
+    it('unsubscribe cancels unsent outreach messages with reason "unsubscribed"', async () => {
+      const candidate = await Candidate.create({
+        jobId: testJobId,
+        fullName: 'Morgan Lee',
+        email: 'morgan-lee@example.com',
+        emailStatus: 'valid',
+        status: 'Contacted',
+        source: 'csv',
+        sourceMode: 'csv',
+      });
+
+      const campaign = await Campaign.create({
+        jobId: testJobId,
+        name: 'Unsubscribe Cancel Test Campaign',
+        status: 'ACTIVE',
+      });
+
+      const step1 = await CampaignStep.create({
+        campaignId: campaign._id,
+        stepIndex: 1,
+        delayDays: 3,
+        subjectTemplate: 'Follow-up',
+        bodyTemplate: 'Body',
+      });
+
+      const msg = await OutreachMessage.create({
+        campaignId: campaign._id,
+        campaignStepId: step1._id,
+        stepIndex: 1,
+        candidateId: candidate._id,
+        jobId: testJobId,
+        toEmail: candidate.email,
+        subject: 'Follow-up',
+        body: 'Body',
+        status: 'QUEUED',
+      });
+
+      // Transition to Unsubscribed via CandidateStatusService
+      await CandidateStatusService.transition(candidate._id, 'Unsubscribed', 'system', 'Opt-out requested');
+
+      const updatedMsg = await OutreachMessage.findById(msg._id);
+      expect(updatedMsg?.status).toBe('CANCELLED');
+      expect(updatedMsg?.cancellationReason).toBe('unsubscribed');
+      expect(updatedMsg?.errorMessage).toBe('Candidate unsubscribed');
+    });
+
+    it('pause does not cancel queued messages, and resume skips cancelled messages', async () => {
+      const candidateA = await Candidate.create({
+        jobId: testJobId,
+        fullName: 'Active Candidate',
+        email: 'active@example.com',
+        emailStatus: 'valid',
+        status: 'Contacted',
+        source: 'csv',
+        sourceMode: 'csv',
+      });
+
+      const candidateB = await Candidate.create({
+        jobId: testJobId,
+        fullName: 'Cancelled Candidate',
+        email: 'cancelled@example.com',
+        emailStatus: 'valid',
+        status: 'Unsubscribed',
+        outreachStopped: true,
+        source: 'csv',
+        sourceMode: 'csv',
+      });
+
+      const campaign = await Campaign.create({
+        jobId: testJobId,
+        name: 'Pause Resume Lifecycle Campaign',
+        status: 'ACTIVE',
+      });
+
+      const step1 = await CampaignStep.create({
+        campaignId: campaign._id,
+        stepIndex: 1,
+        delayDays: 3,
+        subjectTemplate: 'Follow-up',
+        bodyTemplate: 'Body',
+      });
+
+      const queuedMsgA = await OutreachMessage.create({
+        campaignId: campaign._id,
+        campaignStepId: step1._id,
+        stepIndex: 1,
+        candidateId: candidateA._id,
+        jobId: testJobId,
+        toEmail: candidateA.email,
+        subject: 'Follow-up A',
+        body: 'Body A',
+        status: 'QUEUED',
+      });
+
+      const cancelledMsgB = await OutreachMessage.create({
+        campaignId: campaign._id,
+        campaignStepId: step1._id,
+        stepIndex: 1,
+        candidateId: candidateB._id,
+        jobId: testJobId,
+        toEmail: candidateB.email,
+        subject: 'Follow-up B',
+        body: 'Body B',
+        status: 'CANCELLED',
+        cancellationReason: 'unsubscribed',
+      });
+
+      // 1. Pause campaign via PendingActionService
+      const pauseAction = await PendingActionService.createAction({
+        conversationId,
+        actionType: 'PAUSE_CAMPAIGN',
+        payload: { campaignId: campaign._id.toString() },
+      });
+      await PendingActionService.confirmAction(pauseAction._id.toString());
+
+      // Verify campaign is PAUSED and queuedMsgA is still QUEUED (pause does not cancel)
+      const pausedCampaign = await Campaign.findById(campaign._id);
+      expect(pausedCampaign?.status).toBe('PAUSED');
+      const msgAAfterPause = await OutreachMessage.findById(queuedMsgA._id);
+      expect(msgAAfterPause?.status).toBe('QUEUED');
+
+      // 2. Resume campaign via PendingActionService
+      const resumeAction = await PendingActionService.createAction({
+        conversationId,
+        actionType: 'RESUME_CAMPAIGN',
+        payload: { campaignId: campaign._id.toString() },
+      });
+      const resumeResult = await PendingActionService.confirmAction(resumeAction._id.toString());
+
+      // Resume only re-enqueues QUEUED messages (skips CANCELLED)
+      expect(resumeResult.result.reEnqueuedCount).toBe(1);
+
+      const msgAAfterResume = await OutreachMessage.findById(queuedMsgA._id);
+      expect(msgAAfterResume?.status).toBe('QUEUED');
+      const msgBAfterResume = await OutreachMessage.findById(cancelledMsgB._id);
+      expect(msgBAfterResume?.status).toBe('CANCELLED');
     });
   });
 

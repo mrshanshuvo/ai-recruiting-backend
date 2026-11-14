@@ -112,8 +112,8 @@ Work Policy: Remote`,
     toEmail: liam.email || 'liam.vance@example.com',
     status: 'SENT',
     subject: `Opportunity: Senior Frontend Engineer at Aironauts Technologies`,
-    body: `Hi Liam,\n\nI noticed your architectural frontend work at Acme Cloud Systems and was really impressed by your depth with React 18, TypeScript, and Server-Sent Events.\n\nWe are looking for a Senior Frontend Engineer to lead UI architecture at Aironauts Technologies.\n\nBest,\nAironauts Recruiting`,
-    personalOpening: 'I noticed your architectural frontend work at Acme Cloud Systems and was really impressed by your depth with React 18, TypeScript, and Server-Sent Events.',
+    body: `Hi Liam,\n\nI noticed your work as a Staff UI Engineer at Acme Cloud Systems, particularly your background in React, TypeScript, Vite.\n\nWe are looking for a Senior Frontend Engineer to lead UI architecture at Aironauts Technologies.\n\nBest,\nAironauts Recruiting`,
+    personalOpening: 'I noticed your work as a Staff UI Engineer at Acme Cloud Systems, particularly your background in React, TypeScript, Vite.',
     sentAt: new Date(),
   });
 

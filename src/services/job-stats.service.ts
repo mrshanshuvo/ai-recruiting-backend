@@ -53,6 +53,7 @@ export interface JobStatsResponse {
     campaignsCount: number;
     sentMessages: number;
     queuedMessages: number;
+    cancelledMessages: number;
     isPaused: boolean;
   };
   tokenUsage: {
@@ -305,6 +306,10 @@ export class JobStatsService {
       jobId: jobObjectId,
       status: 'QUEUED',
     });
+    const cancelledMessages = await OutreachMessage.countDocuments({
+      jobId: jobObjectId,
+      status: 'CANCELLED',
+    });
 
     // 10. Token Usage & Estimated Cost
     // Find matching usages by jobId OR conversationId (if job has linked conversation)
@@ -392,6 +397,7 @@ export class JobStatsService {
         campaignsCount,
         sentMessages,
         queuedMessages,
+        cancelledMessages,
         isPaused,
       },
       tokenUsage: {

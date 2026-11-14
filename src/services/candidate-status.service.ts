@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { Candidate, CandidateStatus, ActivityLog, ActivityActor, Job } from '../models';
+import { Candidate, CandidateStatus, ActivityLog, ActivityActor, Job, OutreachMessage } from '../models';
 
 export class InvalidStateTransitionError extends Error {
   public statusCode: number = 422;
@@ -95,6 +95,18 @@ export class CandidateStatusService {
       candidate.outreachStopped = true;
 
       await candidate.save();
+
+      // Cancel any unsent outreach messages for this candidate with reason unsubscribed
+      await OutreachMessage.updateMany(
+        { candidateId: candidate._id, status: 'QUEUED' },
+        {
+          $set: {
+            status: 'CANCELLED',
+            cancellationReason: 'unsubscribed',
+            errorMessage: 'Candidate unsubscribed',
+          },
+        }
+      );
 
       // Write immutable ActivityLog entry
       await ActivityLog.create({

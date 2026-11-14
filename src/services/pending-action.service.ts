@@ -352,6 +352,37 @@ export class PendingActionService {
                   : stepDoc.delayDays * 24 * 60 * 60 * 1000;
             }
 
+            const firstName = candidate.fullName.split(' ')[0] || candidate.fullName;
+            const rawOpening = (stepDoc.stepIndex === 0 ? personalOpening : '').trim();
+            const personalOpeningWithSpacing = rawOpening ? `${rawOpening}\n\n` : '';
+
+            let renderedSubject = stepDoc.subjectTemplate
+              .replace(/\{\{candidateName\}\}/g, candidate.fullName)
+              .replace(/\{\{firstName\}\}/g, firstName)
+              .replace(/\{\{jobTitle\}\}/g, (effectivePayload.jobTitle as string) || 'Engineering Role')
+              .replace(/\{\{companyName\}\}/g, candidate.currentCompany || 'your team');
+
+            let renderedBody = stepDoc.bodyTemplate
+              .replace(/\{\{personalOpening\}\}/g, personalOpeningWithSpacing)
+              .replace(/\{\{candidateName\}\}/g, candidate.fullName)
+              .replace(/\{\{firstName\}\}/g, firstName)
+              .replace(/\{\{jobTitle\}\}/g, (effectivePayload.jobTitle as string) || 'Engineering Role')
+              .replace(/\{\{companyName\}\}/g, candidate.currentCompany || 'your current company')
+              .replace(/\{\{currentTitle\}\}/g, candidate.currentTitle || 'Engineer');
+
+            if (rawOpening && !stepDoc.bodyTemplate.includes('{{personalOpening}}') && stepDoc.stepIndex === 0) {
+              const greetingMatch = renderedBody.match(/^(Hi [^\n]+,\n\n)/);
+              if (greetingMatch) {
+                renderedBody = renderedBody.replace(greetingMatch[0], `${greetingMatch[0]}${rawOpening}\n\n`);
+              } else {
+                renderedBody = `${rawOpening}\n\n${renderedBody}`;
+              }
+            }
+
+            // Clean any unresolved {{...}} placeholders
+            renderedSubject = renderedSubject.replace(/\{\{[^}]+\}\}/g, '').trim();
+            renderedBody = renderedBody.replace(/\{\{[^}]+\}\}/g, '').trim();
+
             // Create pre-queued OutreachMessage record
             await OutreachMessage.create({
               campaignId: campaign._id,
@@ -360,9 +391,9 @@ export class PendingActionService {
               candidateId: candidate._id,
               jobId: new mongoose.Types.ObjectId(jobId),
               toEmail: candidate.email || 'unknown@example.com',
-              subject: stepDoc.subjectTemplate,
-              body: stepDoc.bodyTemplate,
-              personalOpening: stepDoc.stepIndex === 0 ? personalOpening : undefined,
+              subject: renderedSubject,
+              body: renderedBody,
+              personalOpening: stepDoc.stepIndex === 0 ? rawOpening : undefined,
               status: 'QUEUED',
             });
 

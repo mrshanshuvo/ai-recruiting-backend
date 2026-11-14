@@ -86,6 +86,7 @@ export async function processOutreachJob(
   if (candidate.outreachStopped) {
     console.log(`[OutreachWorker] Candidate ${candidate.fullName} has outreachStopped=true. Cancelling step ${stepIndex}.`);
     outreachMsg.status = 'CANCELLED';
+    outreachMsg.cancellationReason = 'replied';
     outreachMsg.errorMessage = 'Outreach stopped due to candidate reply';
     await outreachMsg.save();
     return { outreachMessageId: outreachMsg._id.toString(), candidateId, status: 'SKIPPED_REPLIED' };
@@ -95,6 +96,7 @@ export async function processOutreachJob(
   if (candidate.status === 'Unsubscribed') {
     console.log(`[OutreachWorker] Candidate ${candidate.fullName} is Unsubscribed. Cancelling step ${stepIndex}.`);
     outreachMsg.status = 'CANCELLED';
+    outreachMsg.cancellationReason = 'unsubscribed';
     outreachMsg.errorMessage = 'Candidate unsubscribed';
     await outreachMsg.save();
     return { outreachMessageId: outreachMsg._id.toString(), candidateId, status: 'SKIPPED_UNSUBSCRIBED' };
@@ -158,31 +160,36 @@ export async function processOutreachJob(
     };
   }
 
-  // Template interpolation
+  // Template interpolation (ensures all placeholders are rendered for all steps)
   const firstName = candidate.fullName.split(' ')[0] || candidate.fullName;
-  const renderedSubject = step.subjectTemplate
+  let renderedSubject = (outreachMsg.subject || step.subjectTemplate)
     .replace(/\{\{candidateName\}\}/g, candidate.fullName)
     .replace(/\{\{firstName\}\}/g, firstName)
     .replace(/\{\{jobTitle\}\}/g, job.title)
     .replace(/\{\{companyName\}\}/g, candidate.currentCompany || 'your team');
 
-  const personalOpening = outreachMsg.personalOpening || '';
-  let renderedBody = step.bodyTemplate
-    .replace(/\{\{personalOpening\}\}/g, personalOpening)
+  const rawOpening = (outreachMsg.personalOpening || '').trim();
+  const personalOpeningWithSpacing = rawOpening ? `${rawOpening}\n\n` : '';
+  let renderedBody = (outreachMsg.body || step.bodyTemplate)
+    .replace(/\{\{personalOpening\}\}/g, personalOpeningWithSpacing)
     .replace(/\{\{candidateName\}\}/g, candidate.fullName)
     .replace(/\{\{firstName\}\}/g, firstName)
     .replace(/\{\{jobTitle\}\}/g, job.title)
     .replace(/\{\{companyName\}\}/g, candidate.currentCompany || 'your current company')
     .replace(/\{\{currentTitle\}\}/g, candidate.currentTitle || 'Engineer');
 
-  if (personalOpening && !step.bodyTemplate.includes('{{personalOpening}}')) {
+  if (rawOpening && !renderedBody.includes(rawOpening) && stepIndex === 0) {
     const greetingMatch = renderedBody.match(/^(Hi [^\n]+,\n\n)/);
     if (greetingMatch) {
-      renderedBody = renderedBody.replace(greetingMatch[0], `${greetingMatch[0]}${personalOpening}\n\n`);
+      renderedBody = renderedBody.replace(greetingMatch[0], `${greetingMatch[0]}${rawOpening}\n\n`);
     } else {
-      renderedBody = `${personalOpening}\n\n${renderedBody}`;
+      renderedBody = `${rawOpening}\n\n${renderedBody}`;
     }
   }
+
+  // Safety guard: ensure NO template placeholders {{...}} remain in final output
+  renderedSubject = renderedSubject.replace(/\{\{[^}]+\}\}/g, '').trim();
+  renderedBody = renderedBody.replace(/\{\{[^}]+\}\}/g, '').trim();
 
   // Dispatch email via Nodemailer transport (Ethereal sandbox by default, falls back to local)
   const mailResult = await EmailTransportService.sendMail({

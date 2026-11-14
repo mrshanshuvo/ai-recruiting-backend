@@ -111,4 +111,37 @@ Model inference costs are managed dynamically in `src/config/pricing.config.ts` 
 
 *Note*: In reality, Google AI Studio / Gemini free-tier usage costs $0.00 USD out of pocket. The dollar values tracked in MongoDB and displayed on the dashboard are explicit enterprise rate estimates for transparency and capacity governance.
 
+---
+
+## Honest Architecture Evaluation
+
+### What is Done
+- **Autonomous Conversational Agent**: Complete Vercel AI SDK integration streaming tokens via Server-Sent Events (SSE).
+- **8 Pending Action Confirmation Cards**: Human-in-the-loop gates for mutating actions with autosave via `PATCH /api/actions/:id/payload`.
+- **Asynchronous BullMQ Pipelines**: 4 dedicated workers for sourcing discovery, candidate scoring, multi-step email outreach sequences, and inbound reply triage.
+- **Strict 12-Stage Pipeline State Machine**: Governed transitions with validation, 422 rejections for illegal jumps, and immutable `ActivityLog` audit records.
+- **Defensive LLM Prompt Engineering**: XML delimiter isolation (`<untrusted_candidate_reply>`, `<untrusted_candidate_profile>`), system instruction boundaries, and `needsReview: true` fallback protocols.
+- **Strictly Grounded Personalization**: Candidate openings in outreach emails derived exclusively from verified stored fields without fabrication.
+- **Full Unsubscribe & Cancellation Protocol**: Automatic cancellation of pending follow-ups with reason tracking (`replied` | `unsubscribed`) and pause/resume lifecycle compliance.
+- **Dynamic Slot Booking Engine**: Generation of 5 business days x 3 UTC slots with cryptographic token validation.
+- **Multi-Container Topology (DEC-08)**: Self-contained backend compose (`apps/backend/docker-compose.yml`) and full-stack compose (`deployments/docker-compose.yml`).
+
+### What is Mocked
+- **Email Delivery**: Uses Nodemailer Ethereal test account by default (with preview URLs), falling back to console logger if offline, or production SMTP when configured.
+- **Candidate Sourcing**: Defaults to 10 realistic deterministic fixtures (`src/data/candidate-fixtures.json`) when `SERPER_API_KEY` is not provided.
+- **Candidate Reply Ingestion**: Simulated via `POST /simulate-reply` endpoint rather than an incoming IMAP/webhook email daemon.
+
+### What is Skipped
+- **Bidirectional Google Calendar OAuth Sync**: Replaced with self-hosted booking link and dynamic slot reservation per ADR-0008.
+- **Multi-Tenant User Management & RBAC**: Single recruiter persona per session without database auth tables.
+
+### Trade-offs
+- **Grounded Openings vs 100% LLM Email Generation**: Used pre-approved sequence templates with grounded personal openings (1–2 sentences) to guarantee zero hallucinations and maintain recruiter reviewability.
+- **BullMQ Delayed Jobs vs External Schedulers**: Follow-up emails use BullMQ delayed jobs with configurable delay unit (`seconds` in demo, `days` in production) for immediate observability without complex cron dependencies.
+
+### Known Issues
+- **Free Tier RPM Limits**: Google AI Studio enforces 15 RPM per project; bulk scoring 10+ candidates concurrently requires semaphore throttling (`WORKER_LLM_MAX_CONCURRENCY=3`) and inter-turn cooling windows.
+- **Delayed Message State on Sudden Shutdown**: If Redis is forcibly terminated (`SIGKILL`) while delayed outreach jobs are waiting, in-memory delayed timers rely on BullMQ job recovery on startup.
+
+
 

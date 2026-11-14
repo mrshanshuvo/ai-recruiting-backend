@@ -9,6 +9,7 @@ import { processOutreachSendJob } from '../src/workers/outreach.worker';
 import { CandidateStatusService } from '../src/services/candidate-status.service';
 import { PendingActionService } from '../src/services/pending-action.service';
 import { executeUpdateCandidateStatus } from '../src/agent/tools/update-candidate-status.tool';
+import { generateCandidateOpening } from '../src/agent/tools/propose-campaign.tool';
 
 const API_BASE = 'http://localhost:4000';
 
@@ -192,8 +193,9 @@ Nice-to-Have Requirements:
     const cData = await cRes.json();
     allCandidates = cData.candidates || [];
     const scored = allCandidates.filter((c: any) => c.scoreStatus === 'scored').length;
-    console.log(`Total Candidates Poll ${i + 1}: ${allCandidates.length} total, ${scored} scored`);
-    if (allCandidates.length >= 10 && scored >= allCandidates.length) break;
+    const scoredOrFailed = allCandidates.filter((c: any) => c.scoreStatus === 'scored' || c.scoreStatus === 'failed').length;
+    console.log(`Total Candidates Poll ${i + 1}: ${allCandidates.length} total, ${scored} scored, ${scoredOrFailed} finished`);
+    if (allCandidates.length >= 20 && scoredOrFailed >= allCandidates.length) break;
   }
 
   // STEP 5: Interactive Candidate Review (Accept Candidates)
@@ -218,6 +220,16 @@ Nice-to-Have Requirements:
 
   // STEP 6: Propose & Send Outreach Campaign
   console.log('\n--- Step 6: Multi-Step Outreach Campaign Proposal & Approval ---');
+  const candidateMetadata = targetCandidates.map((c) => ({
+    candidateId: c._id,
+    fullName: c.fullName,
+    currentTitle: c.currentTitle,
+    currentCompany: c.currentCompany,
+    skills: c.skills,
+    snippet: c.snippet,
+    personalOpening: generateCandidateOpening(c, 'Senior Frontend Engineer'),
+  }));
+
   const campaignProposal = await PendingActionService.createAction({
     conversationId,
     actionType: 'SEND_CAMPAIGN',
@@ -226,24 +238,25 @@ Nice-to-Have Requirements:
       jobTitle: 'Senior Frontend Engineer',
       name: 'Senior Frontend Engineer Multi-Step Outreach',
       candidateIds: targetCandidates.map((c) => c._id),
+      candidates: candidateMetadata,
       steps: [
         {
           stepIndex: 0,
           delayDays: 0,
-          subject: 'Exciting Opportunity: Senior Frontend Engineer at Aironauts Technologies',
-          bodyTemplate: 'Hi {{firstName}},\n\nI was impressed by your work and would love to connect regarding our Senior Frontend Engineer role at Aironauts Technologies.\n\nBest,\nRecruiting Team',
+          subject: 'Opportunity: Senior Frontend Engineer at Aironauts Technologies',
+          bodyTemplate: 'Hi {{firstName}},\n\n{{personalOpening}}We are reaching out regarding the Senior Frontend Engineer role at Aironauts Technologies.\n\nWould you be open to a 15-minute chat this week to discuss what we are building?\n\nBest regards,\nAironauts Recruiting Team',
         },
         {
           stepIndex: 1,
           delayDays: 30,
-          subject: 'Following up: Exciting Opportunity: Senior Frontend Engineer at Aironauts Technologies',
-          bodyTemplate: 'Hi {{firstName}},\n\nFollowing up on my previous note. Would you be open for a brief intro call?\n\nBest,\nRecruiting Team',
+          subject: 'Following up: Opportunity: Senior Frontend Engineer at Aironauts Technologies',
+          bodyTemplate: 'Hi {{firstName}},\n\nFollowing up on my previous note. Would you be open for a brief intro call?\n\nBest regards,\nAironauts Recruiting Team',
         },
         {
           stepIndex: 2,
           delayDays: 60,
-          subject: 'Following up: Exciting Opportunity: Senior Frontend Engineer at Aironauts Technologies',
-          bodyTemplate: 'Hi {{firstName}},\n\nJust wanted to make sure this didn\'t get buried. Let me know if you\'d like to chat.\n\nBest,\nRecruiting Team',
+          subject: 'Following up: Opportunity: Senior Frontend Engineer at Aironauts Technologies',
+          bodyTemplate: 'Hi {{firstName}},\n\nJust wanted to make sure this didn\'t get buried. Let me know if you\'d like to chat.\n\nBest regards,\nAironauts Recruiting Team',
         },
       ],
     },
@@ -561,6 +574,83 @@ Nice-to-Have Requirements:
   console.log('Outreach Message Statuses:', JSON.stringify(rawMessageCounts, null, 2));
   console.log('Token Usage by Caller:', JSON.stringify(rawTokenUsage, null, 2));
 
+  // Compute exact raw queries required by Item A3
+  const jobObjectId = new mongoose.Types.ObjectId(jobId);
+  const rawContacted = await Candidate.countDocuments({
+    jobId: jobObjectId,
+    contactedAt: { $ne: null },
+  });
+
+  const rawEverRepliedDocs = await Reply.distinct('candidateId', { jobId: jobObjectId });
+  const rawEverReplied = rawEverRepliedDocs.length;
+
+  const rawEverInterestedDocs = await Reply.distinct('candidateId', {
+    jobId: jobObjectId,
+    replyClass: { $in: ['Interested', 'Wants a meeting'] },
+  });
+  const rawEverInterested = rawEverInterestedDocs.length;
+
+  const rawMeetingsDocs = await ActivityLog.distinct('candidateId', {
+    jobId: jobObjectId,
+    newStatus: 'Meeting booked',
+  });
+  const rawMeetings = rawMeetingsDocs.length;
+
+  const rawHires = await Candidate.countDocuments({
+    jobId: jobObjectId,
+    status: 'Hired',
+  });
+
+  const tokenQuery = {
+    $or: [{ jobId: jobObjectId }, { conversationId: new mongoose.Types.ObjectId(conversationId) }],
+  };
+  const rawTokenAgg = await TokenUsage.aggregate([
+    { $match: tokenQuery },
+    {
+      $group: {
+        _id: null,
+        totalPromptTokens: { $sum: '$promptTokens' },
+        totalCompletionTokens: { $sum: '$completionTokens' },
+        totalTokens: { $sum: '$totalTokens' },
+        totalEstimatedCostUsd: { $sum: '$estimatedCostUsd' },
+      },
+    },
+  ]);
+  const rawPromptTokens = rawTokenAgg[0]?.totalPromptTokens || 0;
+  const rawCompletionTokens = rawTokenAgg[0]?.totalCompletionTokens || 0;
+  const rawTotalTokens = rawTokenAgg[0]?.totalTokens || 0;
+  const rawTotalCost = Number((rawTokenAgg[0]?.totalEstimatedCostUsd || 0).toFixed(6));
+
+  console.log('\n' + '='.repeat(80));
+  console.log('ITEM A3: STATS COMPARISON TABLE (API vs RAW MONGO)');
+  console.log(`Job Title: Senior Frontend Engineer`);
+  console.log(`Job ID: ${jobId}`);
+  console.log('='.repeat(80));
+  console.log('Metric'.padEnd(38) + ' | ' + 'API value'.padEnd(12) + ' | ' + 'Raw value'.padEnd(12) + ' | Match yes/no');
+  console.log('-'.repeat(80));
+
+  const totalCandidatesCount = await Candidate.countDocuments({ jobId: jobObjectId });
+  const statsObj = statsData.stats || statsData;
+  const comparisonRows = [
+    { name: 'Total Candidates', api: statsObj.totals.totalCandidates, raw: totalCandidatesCount },
+    { name: 'Ever Contacted (contactedAt)', api: statsObj.totals.contacted, raw: rawContacted },
+    { name: 'Ever Replied (distinct candidate)', api: statsObj.totals.replied, raw: rawEverReplied },
+    { name: 'Ever Interested (distinct candidate)', api: statsObj.totals.interested, raw: rawEverInterested },
+    { name: 'Meetings (distinct booked in log)', api: statsObj.totals.meetings, raw: rawMeetings },
+    { name: 'Hires (status Hired)', api: statsObj.totals.hires, raw: rawHires },
+    { name: 'Cancelled Messages (outreach)', api: statsObj.campaignSummary.cancelledMessages, raw: await OutreachMessage.countDocuments({ jobId: jobObjectId, status: 'CANCELLED' }) },
+    { name: 'Sent Messages (outreach)', api: statsObj.campaignSummary.sentMessages, raw: await OutreachMessage.countDocuments({ jobId: jobObjectId, status: 'SENT' }) },
+    { name: 'Prompt Tokens', api: statsObj.tokenUsage.totalPromptTokens, raw: rawPromptTokens },
+    { name: 'Completion Tokens', api: statsObj.tokenUsage.totalCompletionTokens, raw: rawCompletionTokens },
+    { name: 'Total Tokens', api: statsObj.tokenUsage.totalTokens, raw: rawTotalTokens },
+    { name: 'Estimated Cost USD', api: statsObj.tokenUsage.totalEstimatedCostUsd, raw: rawTotalCost },
+  ];
+
+  for (const r of comparisonRows) {
+    const match = r.api === r.raw ? 'YES' : 'NO';
+    console.log(`${r.name.padEnd(38)} | ${String(r.api).padEnd(12)} | ${String(r.raw).padEnd(12)} | ${match}`);
+  }
+
   // Print sample TokenUsage records showing conversationId and jobId linkage
   const sampleTokens = await TokenUsage.find({ jobId: new mongoose.Types.ObjectId(jobId) })
     .limit(3)
@@ -573,6 +663,7 @@ Nice-to-Have Requirements:
   console.log('='.repeat(80));
 
   await mongoose.disconnect();
+  process.exit(0);
 }
 
 main().catch((err) => {

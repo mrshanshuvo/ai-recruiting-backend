@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { z } from 'zod';
-import { Candidate, Job, Reply } from '../models';
+import { Candidate, Job, Reply, OutreachMessage } from '../models';
 import { replyProcessingQueue } from '../queues';
 import { processReplyJob } from '../workers/reply.worker';
 
@@ -61,6 +61,18 @@ export async function handleSimulateReply(req: Request, res: Response) {
     // Sequence halting: set outreachStopped = true immediately per ADR-0009
     candidate.outreachStopped = true;
     await candidate.save();
+
+    // Mark all unsent outreach messages for this candidate as CANCELLED with reason replied
+    await OutreachMessage.updateMany(
+      { candidateId: candidate._id, status: 'QUEUED' },
+      {
+        $set: {
+          status: 'CANCELLED',
+          cancellationReason: 'replied',
+          errorMessage: 'Outreach cancelled due to candidate reply',
+        },
+      }
+    );
 
     // Enqueue job to BullMQ reply-processing-queue (real queue, no sync flag)
     const job = await replyProcessingQueue.add('process-reply', {

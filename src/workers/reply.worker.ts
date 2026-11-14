@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { env } from '../config/env';
 import { calculateEstimatedCostUsd } from '../config/pricing.config';
 import { redisConnection } from '../config/redis';
-import { Candidate, Job, Reply, TokenUsage, Conversation, Message, IJob } from '../models';
+import { Candidate, Job, Reply, TokenUsage, Conversation, Message, IJob, OutreachMessage } from '../models';
 import { REPLY_PROCESSING_QUEUE_NAME, outreachSendQueue } from '../queues';
 import { CandidateStatusService } from '../services/candidate-status.service';
 import { PendingActionService } from '../services/pending-action.service';
@@ -289,6 +289,61 @@ SECURITY AND INSTRUCTION HIERARCHY:
   };
 }
 
+interface CreateCardActionParams {
+  targetConvId: string;
+  targetConversation?: any;
+  candidate: any;
+  actionType: 'SEND_BOOKING_LINK' | 'SEND_REPLY';
+  cardType: 'booking_link' | 'reply_draft';
+  payload: Record<string, any>;
+  description: string;
+}
+
+export async function createReplyCardAction(params: CreateCardActionParams): Promise<string> {
+  const { targetConvId, targetConversation, candidate, actionType, cardType, payload, description } = params;
+
+  const pendingAction = await PendingActionService.createAction({
+    conversationId: targetConvId,
+    jobId: candidate.jobId,
+    actionType,
+    payload,
+    description,
+  });
+
+  const pendingActionId = pendingAction._id.toString();
+
+  if (targetConversation) {
+    const cardPayload = {
+      ...payload,
+      actionId: pendingActionId,
+    };
+
+    const assistantMsg = await Message.create({
+      conversationId: targetConversation._id,
+      role: 'assistant',
+      parts: [
+        {
+          type: 'card',
+          card: {
+            cardType,
+            actionId: pendingAction._id,
+            status: 'pending',
+            payload: cardPayload,
+          },
+        },
+      ],
+    });
+
+    await publishConversationEvent(targetConversation._id.toString(), 'CHAT_PART', {
+      messageId: assistantMsg._id.toString(),
+      partIndex: 0,
+      part: assistantMsg.parts[0],
+    });
+  }
+
+  return pendingActionId;
+}
+
 export async function processReplyJob(data: ReplyJobPayload): Promise<{
   replyId: string;
   candidateId: string;
@@ -310,6 +365,18 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
   // 1. Immediately halt all further outreach sequence steps for this candidate per ADR-0009 & F2
   candidate.outreachStopped = true;
   await candidate.save();
+
+  // Mark all unsent outreach messages for this candidate as CANCELLED with reason replied
+  await OutreachMessage.updateMany(
+    { candidateId: candidate._id, status: 'QUEUED' },
+    {
+      $set: {
+        status: 'CANCELLED',
+        cancellationReason: 'replied',
+        errorMessage: 'Outreach stopped due to candidate reply',
+      },
+    }
+  );
 
   // Cancel any queued/delayed BullMQ outreach jobs for this candidate
   try {
@@ -380,6 +447,7 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
 
   // Handle unclassifiable reply requiring recruiter review
   if (classification.needsReview) {
+    await Candidate.findByIdAndUpdate(candidate._id, { needsReview: true });
     const replyDoc = await Reply.create({
       candidateId: candidate._id,
       jobId: candidate.jobId,
@@ -468,10 +536,12 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
 
     const bookingUrl = `${env.PUBLIC_FRONTEND_URL}/mock-booking/${candidate.bookingToken}`;
 
-    const pendingAction = await PendingActionService.createAction({
-      conversationId: targetConvId,
-      jobId: candidate.jobId,
+    pendingActionId = await createReplyCardAction({
+      targetConvId,
+      targetConversation,
+      candidate,
       actionType: 'SEND_BOOKING_LINK',
+      cardType: 'booking_link',
       payload: {
         candidateId: candidate._id.toString(),
         candidateName: candidate.fullName,
@@ -484,40 +554,6 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
       },
       description: `Send interview booking link to ${candidate.fullName}`,
     });
-
-    pendingActionId = pendingAction._id.toString();
-
-    if (targetConversation) {
-      const assistantMsg = await Message.create({
-        conversationId: targetConversation._id,
-        role: 'assistant',
-        parts: [
-          {
-            type: 'card',
-            card: {
-              cardType: 'booking_link',
-              actionId: pendingAction._id,
-              status: 'pending',
-              payload: {
-                actionId: pendingAction._id.toString(),
-                candidateId: candidate._id.toString(),
-                candidateName: candidate.fullName,
-                candidateEmail: candidate.email,
-                jobTitle,
-                bookingToken: candidate.bookingToken,
-                bookingUrl,
-              },
-            },
-          },
-        ],
-      });
-
-      await publishConversationEvent(targetConversation._id.toString(), 'CHAT_PART', {
-        messageId: assistantMsg._id.toString(),
-        partIndex: 0,
-        part: assistantMsg.parts[0],
-      });
-    }
   } else if (classification.replyClass === 'Question') {
     // Question: status stays Replied (DEC-01)
     if (candidate.status === 'Contacted') {
@@ -527,10 +563,12 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
     const draftBody =
       classification.draftResponse || buildGroundedQuestionDraft(job, emailText, firstName);
 
-    const pendingAction = await PendingActionService.createAction({
-      conversationId: targetConvId,
-      jobId: candidate.jobId,
+    pendingActionId = await createReplyCardAction({
+      targetConvId,
+      targetConversation,
+      candidate,
       actionType: 'SEND_REPLY',
+      cardType: 'reply_draft',
       payload: {
         candidateId: candidate._id.toString(),
         candidateName: candidate.fullName,
@@ -543,42 +581,6 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
       },
       description: `Send reply answering question from ${candidate.fullName}`,
     });
-
-    pendingActionId = pendingAction._id.toString();
-
-    if (targetConversation) {
-      const assistantMsg = await Message.create({
-        conversationId: targetConversation._id,
-        role: 'assistant',
-        parts: [
-          {
-            type: 'card',
-            card: {
-              cardType: 'reply_draft',
-              actionId: pendingAction._id,
-              status: 'pending',
-              payload: {
-                actionId: pendingAction._id.toString(),
-                candidateId: candidate._id.toString(),
-                candidateName: candidate.fullName,
-                candidateEmail: candidate.email,
-                replyClass: classification.replyClass!,
-                candidateMessage: emailText,
-                subject: `Re: Opportunity: ${jobTitle} at Aironauts Technologies`,
-                draftedBody: draftBody,
-                body: draftBody,
-              },
-            },
-          },
-        ],
-      });
-
-      await publishConversationEvent(targetConversation._id.toString(), 'CHAT_PART', {
-        messageId: assistantMsg._id.toString(),
-        partIndex: 0,
-        part: assistantMsg.parts[0],
-      });
-    }
   } else if (classification.replyClass === 'Interested') {
     // Interested: Contacted -> Replied -> Interested
     if (candidate.status === 'Contacted') {
@@ -598,10 +600,12 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
       classification.draftResponse ||
       `Hi ${firstName},\n\nThanks for reaching out! We are thrilled to hear of your interest in the ${jobTitle} role. We'd love to share more details about the team and architecture.\n\nBest regards,\nAironauts Recruiting Team`;
 
-    const pendingAction = await PendingActionService.createAction({
-      conversationId: targetConvId,
-      jobId: candidate.jobId,
+    pendingActionId = await createReplyCardAction({
+      targetConvId,
+      targetConversation,
+      candidate,
       actionType: 'SEND_REPLY',
+      cardType: 'reply_draft',
       payload: {
         candidateId: candidate._id.toString(),
         candidateName: candidate.fullName,
@@ -614,42 +618,6 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
       },
       description: `Send reply to interested candidate ${candidate.fullName}`,
     });
-
-    pendingActionId = pendingAction._id.toString();
-
-    if (targetConversation) {
-      const assistantMsg = await Message.create({
-        conversationId: targetConversation._id,
-        role: 'assistant',
-        parts: [
-          {
-            type: 'card',
-            card: {
-              cardType: 'reply_draft',
-              actionId: pendingAction._id,
-              status: 'pending',
-              payload: {
-                actionId: pendingAction._id.toString(),
-                candidateId: candidate._id.toString(),
-                candidateName: candidate.fullName,
-                candidateEmail: candidate.email,
-                replyClass: classification.replyClass!,
-                candidateMessage: emailText,
-                subject: `Re: Opportunity: ${jobTitle} at Aironauts Technologies`,
-                draftedBody: draftBody,
-                body: draftBody,
-              },
-            },
-          },
-        ],
-      });
-
-      await publishConversationEvent(targetConversation._id.toString(), 'CHAT_PART', {
-        messageId: assistantMsg._id.toString(),
-        partIndex: 0,
-        part: assistantMsg.parts[0],
-      });
-    }
   } else if (classification.replyClass === 'Not interested') {
     // Not interested: Contacted -> Replied -> Not interested
     if (candidate.status === 'Contacted') {
@@ -669,10 +637,12 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
       classification.draftResponse ||
       `Hi ${firstName},\n\nThank you for letting us know! We completely understand. Wishing you all the best in your current role, and we hope to stay in touch for future opportunities.\n\nBest regards,\nAironauts Recruiting Team`;
 
-    const pendingAction = await PendingActionService.createAction({
-      conversationId: targetConvId,
-      jobId: candidate.jobId,
+    pendingActionId = await createReplyCardAction({
+      targetConvId,
+      targetConversation,
+      candidate,
       actionType: 'SEND_REPLY',
+      cardType: 'reply_draft',
       payload: {
         candidateId: candidate._id.toString(),
         candidateName: candidate.fullName,
@@ -685,45 +655,10 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
       },
       description: `Send polite closing reply to ${candidate.fullName}`,
     });
-
-    pendingActionId = pendingAction._id.toString();
-
-    if (targetConversation) {
-      const assistantMsg = await Message.create({
-        conversationId: targetConversation._id,
-        role: 'assistant',
-        parts: [
-          {
-            type: 'card',
-            card: {
-              cardType: 'reply_draft',
-              actionId: pendingAction._id,
-              status: 'pending',
-              payload: {
-                actionId: pendingAction._id.toString(),
-                candidateId: candidate._id.toString(),
-                candidateName: candidate.fullName,
-                candidateEmail: candidate.email,
-                replyClass: classification.replyClass!,
-                candidateMessage: emailText,
-                subject: `Re: Opportunity: ${jobTitle} at Aironauts Technologies`,
-                draftedBody: draftBody,
-                body: draftBody,
-              },
-            },
-          },
-        ],
-      });
-
-      await publishConversationEvent(targetConversation._id.toString(), 'CHAT_PART', {
-        messageId: assistantMsg._id.toString(),
-        partIndex: 0,
-        part: assistantMsg.parts[0],
-      });
-    }
   }
 
   // 5. Save Reply record
+  await Candidate.findByIdAndUpdate(candidate._id, { needsReview: false });
   const reply = await Reply.create({
     candidateId: candidate._id,
     jobId: candidate.jobId,
