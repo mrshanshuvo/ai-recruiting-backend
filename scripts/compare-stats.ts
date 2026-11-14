@@ -1,6 +1,6 @@
 import mongoose, { Types } from 'mongoose';
 import { env } from '../src/config/env';
-import { Job, Candidate, Reply, ActivityLog, OutreachMessage, TokenUsage } from '../src/models';
+import { Job, Candidate, Reply, ActivityLog, OutreachMessage, TokenUsage, Conversation } from '../src/models';
 import { ALL_PIPELINE_STATUSES } from '../src/services/job-stats.service';
 
 const API_BASE = `http://localhost:${env.PORT || 4000}`;
@@ -178,8 +178,20 @@ async function main() {
   addRow('Outreach Cancelled', apiStats.campaignSummary.cancelledMessages, rawCancelled);
 
   // 10. Token Usage Sums
+  const job = await Job.findById(jobObjectId).lean();
+  const linkedConv = (job as any)?.conversationId
+    ? { _id: (job as any).conversationId }
+    : await Conversation.findOne({ jobId: jobObjectId }).lean();
+
+  const tokenMatch: any = {
+    $or: [{ jobId: jobObjectId }],
+  };
+  if (linkedConv?._id) {
+    tokenMatch.$or.push({ conversationId: linkedConv._id });
+  }
+
   const tokenAggr = await TokenUsage.aggregate([
-    { $match: { jobId: jobObjectId } },
+    { $match: tokenMatch },
     {
       $group: {
         _id: null,
