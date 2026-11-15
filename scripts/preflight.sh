@@ -66,7 +66,15 @@ fi
 
 # 6. Model in ListModels Check
 echo -n "[6/7] Checking LLM model availability via Gemini ListModels API... "
-TARGET_MODEL="gemini-3.1-flash-lite"
+TARGET_MODEL="${LLM_MODEL}"
+if [ -z "$TARGET_MODEL" ]; then
+  if [ -f ".env" ]; then
+    TARGET_MODEL=$(grep "^LLM_MODEL=" .env | cut -d= -f2 | tr -d '"' | tr -d "'")
+  elif [ -f "apps/backend/.env" ]; then
+    TARGET_MODEL=$(grep "^LLM_MODEL=" apps/backend/.env | cut -d= -f2 | tr -d '"' | tr -d "'")
+  fi
+fi
+TARGET_MODEL="${TARGET_MODEL:-gemini-flash-lite-latest}"
 if [ -n "$API_KEY" ]; then
   MODELS_JSON=$(curl -s "https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}")
   if echo "$MODELS_JSON" | grep -q "models/${TARGET_MODEL}"; then
