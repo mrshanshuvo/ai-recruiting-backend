@@ -487,5 +487,32 @@ describe('Checkpoint 7: Reply Classification, Halting, Meeting Booking & Pipelin
         CandidateStatusService.transition(candidate._id, 'Meeting booked', 'recruiter')
       ).rejects.toThrow(/Cannot transition candidate from 'Contacted' to 'Meeting booked'/);
     });
+
+    it('saves Reply record in MongoDB before candidate status transition triggers (G7)', async () => {
+      const candidate = await Candidate.create({
+        jobId: testJobId,
+        fullName: 'Reply Precedence Candidate',
+        email: `reply-precedence-${Date.now()}@example.com`,
+        emailStatus: 'valid',
+        status: 'Contacted',
+        contactedAt: new Date(),
+      });
+
+      const res = await processReplyJob({
+        candidateId: candidate._id.toString(),
+        emailText: 'I would love to meet! Can you send your calendar link?',
+        sentiment: 'wants a meeting',
+        conversationId: conversationId.toString(),
+      });
+
+      // Candidate must have advanced
+      expect(res.newStatus).toBe('Interested');
+
+      // The reply MUST exist in MongoDB
+      const replyInDb = await Reply.findById(res.replyId);
+      expect(replyInDb).not.toBeNull();
+      expect(replyInDb?.candidateId.toString()).toBe(candidate._id.toString());
+      expect(replyInDb?.replyClass).toBe('Wants a meeting');
+    });
   });
 });

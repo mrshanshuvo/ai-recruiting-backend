@@ -121,9 +121,9 @@ The backend test suite is cleanly partitioned into deterministic local integrati
 
 ## AI Inference Pricing & Cost Governance
 
-Model inference costs are managed dynamically in `src/config/pricing.config.ts` per Decision DEC-18 and ADR-0015:
-- **Gemini 3.1 Flash-Lite**: $0.075 / 1M prompt tokens, $0.30 / 1M completion tokens.
-- **Gemini 3.7 Flash**: $0.15 / 1M prompt tokens, $0.60 / 1M completion tokens.
+Model inference costs are managed dynamically in `src/config/pricing.config.ts`:
+- **Gemini Flash-Lite**: $0.075 / 1M prompt tokens, $0.30 / 1M completion tokens.
+- **Gemini Flash**: $0.15 / 1M prompt tokens, $0.60 / 1M completion tokens.
 
 *Note*: In reality, Google AI Studio / Gemini free-tier usage costs $0.00 USD out of pocket. The dollar values tracked in MongoDB and displayed on the dashboard are explicit enterprise rate estimates for transparency and capacity governance.
 
@@ -140,7 +140,7 @@ Model inference costs are managed dynamically in `src/config/pricing.config.ts` 
 - **Strictly Grounded Personalization**: Candidate openings in outreach emails derived exclusively from verified stored fields without fabrication.
 - **Full Unsubscribe & Cancellation Protocol**: Automatic cancellation of pending follow-ups with reason tracking (`replied` | `unsubscribed`) and pause/resume lifecycle compliance.
 - **Dynamic Slot Booking Engine**: Generation of 5 business days x 3 UTC slots with cryptographic token validation.
-- **Multi-Container Topology (DEC-08)**: Self-contained backend compose (`apps/backend/docker-compose.yml`) and full-stack compose (`deployments/docker-compose.yml`).
+- **Multi-Container Topology**: Self-contained backend compose (`apps/backend/docker-compose.yml`) running API, workers, MongoDB, and Redis.
 
 ### What is Mocked
 - **Email Delivery**: Uses Nodemailer Ethereal test account by default (with preview URLs), falling back to console logger if offline, or production SMTP when configured.
@@ -148,7 +148,7 @@ Model inference costs are managed dynamically in `src/config/pricing.config.ts` 
 - **Candidate Reply Ingestion**: Simulated via `POST /simulate-reply` endpoint rather than an incoming IMAP/webhook email daemon.
 
 ### What is Skipped
-- **Bidirectional Google Calendar OAuth Sync**: Replaced with self-hosted booking link and dynamic slot reservation per ADR-0008.
+- **Bidirectional Google Calendar OAuth Sync**: Replaced with self-hosted booking link and dynamic slot reservation for zero-credential reviewer evaluation.
 - **Multi-Tenant User Management & RBAC**: Single recruiter persona per session without database auth tables.
 
 ### Trade-offs

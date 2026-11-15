@@ -39,9 +39,77 @@ async function main() {
     process.exit(1);
   }
   const apiData = await res.json();
+  if (!apiData || !apiData.success || !apiData.stats) {
+    console.error('FATAL: API response missing success envelope or stats object:', JSON.stringify(apiData));
+    process.exit(1);
+  }
   const apiStats = apiData.stats;
-  const everReached = apiStats.everReached || apiStats.totals;
-  const currentStatusCounts = apiStats.currentStatusCounts || apiStats.funnel;
+
+  console.log('--- REAL STATS API RESPONSE (JSON) ---');
+  console.log(JSON.stringify(apiStats, null, 2));
+  console.log('\n--- FIELD NAMES SCRIPT READS FROM apiStats ---');
+  console.log([
+    'apiStats.everReached.totalCandidates',
+    'apiStats.everReached.contacted',
+    'apiStats.everReached.replied',
+    'apiStats.everReached.interested',
+    'apiStats.everReached.meetings',
+    'apiStats.everReached.hires',
+    ...ALL_PIPELINE_STATUSES.map((st) => `apiStats.currentStatusCounts["${st}"]`),
+    'apiStats.campaignSummary.sentMessages',
+    'apiStats.campaignSummary.queuedMessages',
+    'apiStats.campaignSummary.cancelledMessages',
+    'apiStats.tokenUsage.totalPromptTokens',
+    'apiStats.tokenUsage.totalCompletionTokens',
+    'apiStats.tokenUsage.totalTokens',
+  ].join('\n'));
+  console.log('\n-----------------------------------------------\n');
+
+  if (!apiStats.everReached || typeof apiStats.everReached !== 'object') {
+    console.error('FATAL: Missing required block "everReached" in API stats');
+    process.exit(1);
+  }
+  if (!apiStats.currentStatusCounts || typeof apiStats.currentStatusCounts !== 'object') {
+    console.error('FATAL: Missing required block "currentStatusCounts" in API stats');
+    process.exit(1);
+  }
+  if (!apiStats.campaignSummary || typeof apiStats.campaignSummary !== 'object') {
+    console.error('FATAL: Missing required block "campaignSummary" in API stats');
+    process.exit(1);
+  }
+  if (!apiStats.tokenUsage || typeof apiStats.tokenUsage !== 'object') {
+    console.error('FATAL: Missing required block "tokenUsage" in API stats');
+    process.exit(1);
+  }
+
+  const everReached = apiStats.everReached;
+  const currentStatusCounts = apiStats.currentStatusCounts;
+
+  function assertRequiredField(val: any, fieldPath: string) {
+    if (val === undefined || val === null || typeof val !== 'number') {
+      console.error(`FATAL: Missing or invalid required API field "${fieldPath}": received ${val}`);
+      process.exit(1);
+    }
+  }
+
+  assertRequiredField(everReached.totalCandidates, 'everReached.totalCandidates');
+  assertRequiredField(everReached.contacted, 'everReached.contacted');
+  assertRequiredField(everReached.replied, 'everReached.replied');
+  assertRequiredField(everReached.interested, 'everReached.interested');
+  assertRequiredField(everReached.meetings, 'everReached.meetings');
+  assertRequiredField(everReached.hires, 'everReached.hires');
+
+  assertRequiredField(apiStats.campaignSummary.sentMessages, 'campaignSummary.sentMessages');
+  assertRequiredField(apiStats.campaignSummary.queuedMessages, 'campaignSummary.queuedMessages');
+  assertRequiredField(apiStats.campaignSummary.cancelledMessages, 'campaignSummary.cancelledMessages');
+
+  assertRequiredField(apiStats.tokenUsage.totalPromptTokens, 'tokenUsage.totalPromptTokens');
+  assertRequiredField(apiStats.tokenUsage.totalCompletionTokens, 'tokenUsage.totalCompletionTokens');
+  assertRequiredField(apiStats.tokenUsage.totalTokens, 'tokenUsage.totalTokens');
+
+  for (const st of ALL_PIPELINE_STATUSES) {
+    assertRequiredField(currentStatusCounts[st], `currentStatusCounts["${st}"]`);
+  }
 
   const jobObjectId = new Types.ObjectId(targetJobId);
   const rows: ComparisonRow[] = [];
@@ -64,7 +132,7 @@ async function main() {
   // 3. Status Funnel (all 12 statuses)
   for (const st of ALL_PIPELINE_STATUSES) {
     const rawCount = await Candidate.countDocuments({ jobId: jobObjectId, status: st });
-    addRow(`Status: ${st}`, currentStatusCounts[st] ?? 0, rawCount);
+    addRow(`Status: ${st}`, currentStatusCounts[st], rawCount);
   }
 
   // 4. Ever-Contacted Candidates

@@ -504,7 +504,20 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
     };
   }
 
-  // 4. State Transitions & Action Creation per F2 Table & Strict State Machine (F7)
+  // 4. Save Reply record FIRST (G7: Reply record is committed in MongoDB before status transitions trigger)
+  await Candidate.findByIdAndUpdate(candidate._id, { needsReview: false });
+  const reply = await Reply.create({
+    candidateId: candidate._id,
+    jobId: candidate.jobId,
+    senderEmail: candidate.email || 'candidate@example.com',
+    body: emailText,
+    replyClass: classification.replyClass || 'unclassified',
+    classificationReason: classification.reason,
+    isSimulated,
+    receivedAt: new Date(),
+  });
+
+  // 5. State Transitions & Action Creation per F2 Table & Strict State Machine (F7)
   let pendingActionId: string | undefined;
 
   if (classification.replyClass === 'Unsubscribe') {
@@ -675,19 +688,6 @@ export async function processReplyJob(data: ReplyJobPayload): Promise<{
       description: `Send polite closing reply to ${candidate.fullName}`,
     });
   }
-
-  // 5. Save Reply record
-  await Candidate.findByIdAndUpdate(candidate._id, { needsReview: false });
-  const reply = await Reply.create({
-    candidateId: candidate._id,
-    jobId: candidate.jobId,
-    senderEmail: candidate.email || 'candidate@example.com',
-    body: emailText,
-    replyClass: classification.replyClass || 'unclassified',
-    classificationReason: classification.reason,
-    isSimulated,
-    receivedAt: new Date(),
-  });
 
   const updatedCandidate = await Candidate.findById(candidate._id);
 

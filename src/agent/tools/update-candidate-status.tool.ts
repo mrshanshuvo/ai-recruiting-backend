@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { z } from 'zod';
-import { Candidate, CandidateStatus, Job } from '../../models';
+import { Candidate, CandidateStatus, Job, Conversation } from '../../models';
 import { PendingActionService } from '../../services/pending-action.service';
 import { ALLOWED_TRANSITIONS } from '../../services/candidate-status.service';
 
@@ -32,18 +32,33 @@ export async function executeUpdateCandidateStatus(
 ) {
   let candidate = null;
 
+  let targetJobId: mongoose.Types.ObjectId | undefined;
+  if (conversationId && mongoose.Types.ObjectId.isValid(conversationId)) {
+    const conv = await Conversation.findById(conversationId).lean();
+    if (conv?.jobId) {
+      targetJobId = conv.jobId as any;
+    }
+  }
+
   if (input.candidateId && mongoose.Types.ObjectId.isValid(input.candidateId)) {
     candidate = await Candidate.findById(input.candidateId);
   }
 
   if (!candidate && input.candidateName) {
-    candidate = await Candidate.findOne({
-      fullName: { $regex: new RegExp(`^${input.candidateName.trim()}$`, 'i') },
-    });
+    const nameRegex = new RegExp(`^${input.candidateName.trim()}$`, 'i');
+    const query: any = { fullName: { $regex: nameRegex } };
+    if (targetJobId) {
+      query.jobId = targetJobId;
+    }
+    candidate = await Candidate.findOne(query).sort({ updatedAt: -1 });
+
     if (!candidate) {
-      const partialMatches = await Candidate.find({
-        fullName: { $regex: new RegExp(input.candidateName.trim(), 'i') },
-      });
+      const partialRegex = new RegExp(input.candidateName.trim(), 'i');
+      const partialQuery: any = { fullName: { $regex: partialRegex } };
+      if (targetJobId) {
+        partialQuery.jobId = targetJobId;
+      }
+      const partialMatches = await Candidate.find(partialQuery);
       if (partialMatches.length === 1) {
         candidate = partialMatches[0];
       } else if (partialMatches.length > 1) {

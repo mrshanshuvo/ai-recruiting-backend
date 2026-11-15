@@ -316,7 +316,7 @@ export class AgentService {
 
       list_jobs: tool({
         description:
-          'Lists all recruitment jobs in the database. Use ONLY when the recruiter specifically asks to list or see all available jobs (e.g. "list all jobs", "what jobs exist?"). NEVER invoke as a prerequisite lookup for candidates, campaigns, stats, or status updates.',
+          'Lists all recruitment job postings in the database. Use ONLY when the recruiter specifically asks to list or see available job openings (e.g. "what open roles are there?"). NEVER use when asking about candidates, applicants, or people, and NEVER invoke as a prerequisite lookup.',
         inputSchema: listJobsInputSchema,
         execute: async (input: z.infer<typeof listJobsInputSchema>) => {
           return executeListJobs(input);
@@ -341,7 +341,7 @@ export class AgentService {
 
       show_candidates: tool({
         description:
-          'Displays a table of candidates for a job as an interactive candidate_table card in browse mode (sorted by score descending with direct per-row Accept/Reject actions). Use directly whenever the recruiter asks to see, view, or show candidates (e.g. "show me the candidates"). jobId is optional.',
+          'Displays candidate profiles for a job as an interactive candidate_table card in browse mode (sorted by score descending with direct per-row Accept/Reject actions). Use when the recruiter asks to see, view, inspect, or review candidates or applicants. jobId is optional.',
         inputSchema: showCandidatesInputSchema,
         execute: async (input: z.infer<typeof showCandidatesInputSchema>) => {
           const res = await executeShowCandidates(input);
@@ -364,7 +364,8 @@ export class AgentService {
       }),
 
       get_campaign: tool({
-        description: 'Gets recruitment campaign details and outreach sequence for a job.',
+        description:
+          'Retrieves outreach campaign details and email templates for a job. Use ONLY when the user explicitly asks to view or inspect campaign sequence details.',
         inputSchema: getCampaignInputSchema,
         execute: async (input: z.infer<typeof getCampaignInputSchema>) => {
           return executeGetCampaign(input);
@@ -399,7 +400,8 @@ export class AgentService {
       }),
 
       pause_campaign: tool({
-        description: 'Proposes pausing an active outreach campaign (e.g. "pause the campaign"). Suspends all scheduled follow-up steps. jobId is optional.',
+        description:
+          'Proposes pausing an active outreach campaign or stopping/suspending outreach emails. Suspends all scheduled follow-up steps. Use whenever the user asks to pause, stop, hold, or suspend outreach emails or campaigns.',
         inputSchema: pauseCampaignInputSchema,
         execute: async (input: z.infer<typeof pauseCampaignInputSchema>) => {
           const res = await executePauseCampaign(input, conversationId);

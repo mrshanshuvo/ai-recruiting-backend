@@ -40,27 +40,8 @@ async function main() {
   const conversationId = convData.conversationId;
   console.log(`Created Conversation ID: ${conversationId}`);
 
-  const seedJd = `Title: Senior Frontend Engineer (React & TypeScript)
-Company: Aironauts Technologies
-Location: San Francisco, CA (Remote Friendly)
-Seniority: Senior
-Salary: $140,000 - $180,000 USD + Equity
-Work Policy: Remote
-
-About the Role:
-We are looking for an experienced Senior Frontend Engineer to lead the architecture of our next-generation web applications. You will work closely with design, product, and AI research teams to deliver responsive, accessible, and high-performance interfaces.
-
-Must-Have Requirements:
-- 5+ years of professional web development experience.
-- Deep expertise in React 18, TypeScript, and modern state management.
-- Strong knowledge of responsive styling with Tailwind CSS or CSS Modules.
-- Experience with real-time streaming architectures (Server-Sent Events or WebSockets).
-- Proven track record of writing unit, integration, and E2E tests.
-
-Nice-to-Have Requirements:
-- Experience with Next.js or Vite build tooling.
-- Knowledge of GraphQL and Apollo Client.
-- Familiarity with AI interfaces, generative UI, or prompt engineering.`;
+  const jdPath = path.resolve(__dirname, '../seed/sample-jd.txt');
+  const seedJd = fs.readFileSync(jdPath, 'utf8');
 
   console.log('Recruiter sends seed JD into chat...');
   await fetch(`${API_BASE}/api/chat/message`, {
@@ -171,7 +152,7 @@ Nice-to-Have Requirements:
 
   // STEP 4: Upload Real 12-Row Seed CSV
   console.log('\n--- Step 4: Upload Real 12-Row Seed CSV ---');
-  const csvPath = path.resolve(__dirname, '../src/data/sample-candidates.csv');
+  const csvPath = path.resolve(__dirname, '../seed/sample-candidates.csv');
   const fileContent = fs.readFileSync(csvPath);
   const blob = new Blob([fileContent], { type: 'text/csv' });
   const formData = new FormData();

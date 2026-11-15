@@ -176,7 +176,7 @@ Nice-to-Have Requirements:
 
   // 4. CSV upload
   await recordStep('4. CSV upload', 'Worker: Multi-Candidate CSV Ingestion & Scoring Queue', async () => {
-    const csvPath = path.resolve(__dirname, '../src/data/sample-candidates.csv');
+    const csvPath = path.resolve(__dirname, '../seed/sample-candidates.csv');
     const fileContent = fs.readFileSync(csvPath);
     const blob = new Blob([fileContent], { type: 'text/csv' });
     const formData = new FormData();

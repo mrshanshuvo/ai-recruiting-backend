@@ -4,7 +4,7 @@ import { isRedisConnected } from '../config/redis';
 
 export const healthRouter = Router();
 
-healthRouter.get('/health', async (_req: Request, res: Response) => {
+healthRouter.get(['/health', '/api/health'], async (_req: Request, res: Response) => {
   const mongoStatus = isMongoConnected() ? 'connected' : 'disconnected';
   const redisStatus = isRedisConnected() ? 'connected' : 'disconnected';
   const isHealthy = mongoStatus === 'connected' && redisStatus === 'connected';
