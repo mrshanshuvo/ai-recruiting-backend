@@ -4,11 +4,11 @@
   "description": "Backend API and BullMQ worker for AI Recruiting Co-Worker",
   "main": "dist/index.api.js",
   "scripts": {
-    "build": "tsc && node -e 'require(\"fs\").cpSync(\"src/data\", \"dist/data\", { recursive: true, errorOnExist: false })'",
-    "start:api": "node dist/index.api.js",
-    "start:worker": "node dist/index.worker.js",
-    "dev:api": "tsx watch src/index.api.ts",
-    "dev:worker": "tsx watch src/index.worker.ts",
+    "build": "node init && tsc && node -e 'require(\"fs\").cpSync(\"src/data\", \"dist/data\", { recursive: true, errorOnExist: false })'",
+    "start:api": "node init && node dist/index.api.js",
+    "start:worker": "node init && node dist/index.worker.js",
+    "dev:api": "node init && tsx watch src/index.api.ts",
+    "dev:worker": "node init && tsx watch src/index.worker.ts",
     "test": "vitest run --exclude '**/*.live.test.ts'",
     "test:live": "vitest run src/__tests__/prompt-injection.live.test.ts",
     "preflight": "bash scripts/preflight.sh"
@@ -25,6 +25,7 @@
     "ioredis": "^5.4.1",
     "mongoose": "^8.5.3",
     "multer": "^1.4.5-lts.1",
+    "node-fetch": "^3.3.2",
     "nodemailer": "^6.9.14",
     "p-limit": "^3.1.0",
     "zod": "^3.23.8"
